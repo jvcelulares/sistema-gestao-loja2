@@ -38,11 +38,15 @@ interface AppContextType {
   usuarios: User[];
   criarUsuario: (usuario: Omit<User, 'id' | 'createdAt'>) => void;
   removerUsuario: (id: string) => void;
+
+  // Faturamento e lucro (para dashboard)
+  faturamentoTotal: number;
+  lucroTotal: number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Dados iniciais para demonstração
+// Dados iniciais para demonstração (apenas para usuário principal JV Celulares)
 const produtosIniciais: Produto[] = [
   {
     id: '1',
@@ -214,21 +218,27 @@ const manutencoesIniciais: Manutencao[] = [
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loginAttempts, setLoginAttempts] = useState(0);
-  const [produtos, setProdutos] = useState<Produto[]>(produtosIniciais);
-  const [clientes, setClientes] = useState<Cliente[]>(clientesIniciais);
-  const [vendas, setVendas] = useState<Venda[]>(vendasIniciais);
-  const [manutencoes, setManutencoes] = useState<Manutencao[]>(manutencoesIniciais);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [vendas, setVendas] = useState<Venda[]>([]);
+  const [manutencoes, setManutencoes] = useState<Manutencao[]>([]);
   const [usuarios, setUsuarios] = useState<User[]>([]);
+  const [faturamentoTotal, setFaturamentoTotal] = useState(0);
+  const [lucroTotal, setLucroTotal] = useState(0);
+
+  // Função para obter chave de localStorage específica do usuário
+  const getUserStorageKey = (key: string, userId?: string) => {
+    const currentUserId = userId || user?.id || 'default';
+    return `jv-${key}-${currentUserId}`;
+  };
 
   // Carregar dados do localStorage
   useEffect(() => {
     const savedUser = localStorage.getItem('jv-user');
     const savedLoginAttempts = localStorage.getItem('jv-login-attempts');
-    const savedProdutos = localStorage.getItem('jv-produtos');
-    const savedClientes = localStorage.getItem('jv-clientes');
-    const savedVendas = localStorage.getItem('jv-vendas');
-    const savedManutencoes = localStorage.getItem('jv-manutencoes');
     const savedUsuarios = localStorage.getItem('jv-usuarios');
+    const savedFaturamento = localStorage.getItem('jv-faturamento-total');
+    const savedLucro = localStorage.getItem('jv-lucro-total');
 
     if (savedUser) {
       setUser(JSON.parse(savedUser));
@@ -236,22 +246,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (savedLoginAttempts) {
       setLoginAttempts(parseInt(savedLoginAttempts));
     }
-    if (savedProdutos) {
-      setProdutos(JSON.parse(savedProdutos));
-    }
-    if (savedClientes) {
-      setClientes(JSON.parse(savedClientes));
-    }
-    if (savedVendas) {
-      setVendas(JSON.parse(savedVendas));
-    }
-    if (savedManutencoes) {
-      setManutencoes(JSON.parse(savedManutencoes));
-    }
     if (savedUsuarios) {
       setUsuarios(JSON.parse(savedUsuarios));
     }
+    if (savedFaturamento) {
+      setFaturamentoTotal(parseFloat(savedFaturamento));
+    }
+    if (savedLucro) {
+      setLucroTotal(parseFloat(savedLucro));
+    }
   }, []);
+
+  // Carregar dados específicos do usuário quando user muda
+  useEffect(() => {
+    if (user) {
+      // Se for o usuário principal da JV Celulares, carrega dados iniciais se não existirem
+      if (user.username === 'jvcell2023') {
+        const savedProdutos = localStorage.getItem(getUserStorageKey('produtos'));
+        const savedClientes = localStorage.getItem(getUserStorageKey('clientes'));
+        const savedVendas = localStorage.getItem(getUserStorageKey('vendas'));
+        const savedManutencoes = localStorage.getItem(getUserStorageKey('manutencoes'));
+
+        setProdutos(savedProdutos ? JSON.parse(savedProdutos) : produtosIniciais);
+        setClientes(savedClientes ? JSON.parse(savedClientes) : clientesIniciais);
+        setVendas(savedVendas ? JSON.parse(savedVendas) : vendasIniciais);
+        setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : manutencoesIniciais);
+      } else {
+        // Para outros usuários, carrega dados específicos ou inicia vazio
+        const savedProdutos = localStorage.getItem(getUserStorageKey('produtos'));
+        const savedClientes = localStorage.getItem(getUserStorageKey('clientes'));
+        const savedVendas = localStorage.getItem(getUserStorageKey('vendas'));
+        const savedManutencoes = localStorage.getItem(getUserStorageKey('manutencoes'));
+
+        setProdutos(savedProdutos ? JSON.parse(savedProdutos) : []);
+        setClientes(savedClientes ? JSON.parse(savedClientes) : []);
+        setVendas(savedVendas ? JSON.parse(savedVendas) : []);
+        setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : []);
+      }
+    }
+  }, [user]);
 
   // Salvar dados no localStorage
   useEffect(() => {
@@ -265,24 +298,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loginAttempts]);
 
   useEffect(() => {
-    localStorage.setItem('jv-produtos', JSON.stringify(produtos));
-  }, [produtos]);
+    if (user) {
+      localStorage.setItem(getUserStorageKey('produtos'), JSON.stringify(produtos));
+    }
+  }, [produtos, user]);
 
   useEffect(() => {
-    localStorage.setItem('jv-clientes', JSON.stringify(clientes));
-  }, [clientes]);
+    if (user) {
+      localStorage.setItem(getUserStorageKey('clientes'), JSON.stringify(clientes));
+    }
+  }, [clientes, user]);
 
   useEffect(() => {
-    localStorage.setItem('jv-vendas', JSON.stringify(vendas));
-  }, [vendas]);
+    if (user) {
+      localStorage.setItem(getUserStorageKey('vendas'), JSON.stringify(vendas));
+    }
+  }, [vendas, user]);
 
   useEffect(() => {
-    localStorage.setItem('jv-manutencoes', JSON.stringify(manutencoes));
-  }, [manutencoes]);
+    if (user) {
+      localStorage.setItem(getUserStorageKey('manutencoes'), JSON.stringify(manutencoes));
+    }
+  }, [manutencoes, user]);
 
   useEffect(() => {
     localStorage.setItem('jv-usuarios', JSON.stringify(usuarios));
   }, [usuarios]);
+
+  useEffect(() => {
+    localStorage.setItem('jv-faturamento-total', faturamentoTotal.toString());
+  }, [faturamentoTotal]);
+
+  useEffect(() => {
+    localStorage.setItem('jv-lucro-total', lucroTotal.toString());
+  }, [lucroTotal]);
 
   const login = (username: string, password: string, type: 'normal' | 'admin' = 'normal'): boolean => {
     if (type === 'normal' && username === 'jvcell2023' && password === 'Jesuscristovive') {
@@ -331,6 +380,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null);
+    setProdutos([]);
+    setClientes([]);
+    setVendas([]);
+    setManutencoes([]);
     localStorage.removeItem('jv-user');
   };
 
@@ -381,6 +434,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
     });
+
+    // Atualizar faturamento total
+    setFaturamentoTotal(prev => prev + venda.total);
+    
+    // Calcular e atualizar lucro
+    const lucroVenda = venda.itens.reduce((lucroItem, item) => {
+      const produto = produtos.find(p => p.id === item.produtoId);
+      if (produto) {
+        const custoTotal = produto.precoCusto * item.quantidade;
+        const receitaTotal = item.subtotal;
+        return lucroItem + (receitaTotal - custoTotal);
+      }
+      return lucroItem;
+    }, 0);
+    
+    setLucroTotal(prev => prev + lucroVenda);
   };
 
   const atualizarVenda = (id: string, vendaAtualizada: Partial<Venda>) => {
@@ -401,11 +470,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const atualizarManutencao = (id: string, manutencaoAtualizada: Partial<Manutencao>) => {
+    const manutencaoAnterior = manutencoes.find(m => m.id === id);
+    
     setManutencoes(prev => prev.map(manutencao => 
       manutencao.id === id 
         ? { ...manutencao, ...manutencaoAtualizada, updatedAt: new Date().toISOString() }
         : manutencao
     ));
+
+    // Se o status mudou para "entregue", atualizar faturamento e lucro
+    if (manutencaoAnterior && 
+        manutencaoAnterior.status !== 'entregue' && 
+        manutencaoAtualizada.status === 'entregue') {
+      
+      const manutencaoAtualizada_completa = { ...manutencaoAnterior, ...manutencaoAtualizada };
+      
+      // Adicionar ao faturamento
+      setFaturamentoTotal(prev => prev + manutencaoAtualizada_completa.valorServico);
+      
+      // Calcular e adicionar ao lucro (valor do serviço - custo do material)
+      const custoMaterial = manutencaoAtualizada_completa.custoMaterial || 0;
+      const lucroManutencao = manutencaoAtualizada_completa.valorServico - custoMaterial;
+      setLucroTotal(prev => prev + lucroManutencao);
+    }
   };
 
   const removerManutencao = (id: string) => {
@@ -460,7 +547,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Usuários
     usuarios,
     criarUsuario,
-    removerUsuario
+    removerUsuario,
+
+    // Faturamento e lucro
+    faturamentoTotal,
+    lucroTotal
   };
 
   return (
