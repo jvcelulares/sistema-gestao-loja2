@@ -39,7 +39,7 @@ export default function AdminPanel() {
     const novoUsuario = {
       username: formData.username,
       password: formData.password,
-      role: 'user' as const,
+      role: formData.tipoUsuario === 'admin' ? 'admin' as const : 'user' as const,
       type: 'normal' as const,
       tempoAcesso: diasAcesso,
       expiresAt: dataExpiracao.toISOString(),
@@ -167,6 +167,7 @@ export default function AdminPanel() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado em</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tempo de Acesso</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -185,6 +186,15 @@ export default function AdminPanel() {
                             <div className="text-sm font-medium text-gray-900">{usuario.username}</div>
                             <div className="text-sm text-gray-500">ID: {usuario.id}</div>
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            usuario.role === 'admin' 
+                              ? 'bg-purple-100 text-purple-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {usuario.role === 'admin' ? 'Administrador' : 'Usuário Comum'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {formatDate(new Date(usuario.createdAt))}
@@ -225,7 +235,7 @@ export default function AdminPanel() {
                   
                   {usuarios.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                         Nenhum usuário criado ainda
                       </td>
                     </tr>
@@ -277,6 +287,20 @@ export default function AdminPanel() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Usuário</label>
+                    <select
+                      required
+                      value={formData.tipoUsuario || ''}
+                      onChange={(e) => setFormData({...formData, tipoUsuario: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="">Selecione o tipo</option>
+                      <option value="user">Usuário Comum</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tempo de Acesso</label>
                     <select
                       required
@@ -298,7 +322,7 @@ export default function AdminPanel() {
                       <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                       <div className="text-sm text-yellow-800">
                         <p className="font-medium">Importante:</p>
-                        <p>Novos usuários não terão acesso aos dados da JV Celulares e precisarão configurar suas próprias informações da loja.</p>
+                        <p>Cada usuário terá seu próprio perfil individual com dados exclusivos. Usuários comuns não terão acesso aos dados da JV Celulares.</p>
                       </div>
                     </div>
                   </div>
