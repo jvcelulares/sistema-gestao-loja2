@@ -1,13 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Verificar se estamos no cliente e se as variáveis existem
+const supabaseUrl = typeof window !== 'undefined' 
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL || '' 
+  : '';
+const supabaseAnonKey = typeof window !== 'undefined' 
+  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '' 
+  : '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Criar cliente apenas se as variáveis existirem
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 // Função para obter usuário atual
 export const getCurrentUser = async () => {
   try {
+    if (!supabase) {
+      return { user: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error) throw error;
     return { user, error: null };
@@ -19,6 +31,10 @@ export const getCurrentUser = async () => {
 // Função para criar usuário no Supabase
 export const createUserInSupabase = async (email: string, password: string) => {
   try {
+    if (!supabase) {
+      return { user: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -34,6 +50,10 @@ export const createUserInSupabase = async (email: string, password: string) => {
 // Função para fazer login
 export const loginUser = async (email: string, password: string) => {
   try {
+    if (!supabase) {
+      return { user: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -49,6 +69,10 @@ export const loginUser = async (email: string, password: string) => {
 // Função para resetar senha
 export const resetPassword = async (email: string) => {
   try {
+    if (!supabase) {
+      return { error: new Error('Supabase not configured') };
+    }
+    
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     if (error) throw error;
     return { success: true };
@@ -60,6 +84,10 @@ export const resetPassword = async (email: string) => {
 // Função para fazer logout
 export const logoutUser = async () => {
   try {
+    if (!supabase) {
+      return { error: new Error('Supabase not configured') };
+    }
+    
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     return { success: true };
@@ -71,6 +99,10 @@ export const logoutUser = async () => {
 // Função para criar perfil de loja do usuário
 export const createUserStoreProfile = async (userId: string, profileData: any) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('user_store_profiles')
       .insert([
@@ -99,6 +131,10 @@ export const createUserStoreProfile = async (userId: string, profileData: any) =
 // Função para obter perfil de loja do usuário
 export const getUserStoreProfile = async (userId: string) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('user_store_profiles')
       .select('*')
@@ -115,6 +151,10 @@ export const getUserStoreProfile = async (userId: string) => {
 // Função para atualizar perfil de loja do usuário
 export const updateUserStoreProfile = async (userId: string, profileData: any) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('user_store_profiles')
       .update({
@@ -140,6 +180,10 @@ export const updateUserStoreProfile = async (userId: string, profileData: any) =
 // Função para salvar dados da loja no Supabase
 export const saveStoreData = async (userId: string, storeData: any) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('store_data')
       .upsert({
@@ -149,6 +193,7 @@ export const saveStoreData = async (userId: string, storeData: any) => {
         vendas: storeData.vendas || [],
         manutencoes: storeData.manutencoes || [],
         termos_garantia: storeData.termosGarantia || [],
+        vendedores: storeData.vendedores || [],
         faturamento_total: storeData.faturamentoTotal || 0,
         lucro_total: storeData.lucroTotal || 0,
         updated_at: new Date().toISOString()
@@ -166,6 +211,10 @@ export const saveStoreData = async (userId: string, storeData: any) => {
 // Função para carregar dados da loja do Supabase
 export const loadStoreData = async (userId: string) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('store_data')
       .select('*')
@@ -182,6 +231,10 @@ export const loadStoreData = async (userId: string) => {
 // Função para criar usuário local (criado pelo admin)
 export const createAdminUser = async (creatorUserId: string, userData: any) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('admin_created_users')
       .insert([
@@ -209,6 +262,10 @@ export const createAdminUser = async (creatorUserId: string, userData: any) => {
 // Função para carregar usuários criados pelo admin
 export const loadAdminUsers = async (creatorUserId: string) => {
   try {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase not configured') };
+    }
+    
     const { data, error } = await supabase
       .from('admin_created_users')
       .select('*')
@@ -224,6 +281,10 @@ export const loadAdminUsers = async (creatorUserId: string) => {
 // Função para remover usuário criado pelo admin
 export const removeAdminUser = async (userId: string) => {
   try {
+    if (!supabase) {
+      return { success: false, error: new Error('Supabase not configured') };
+    }
+    
     const { error } = await supabase
       .from('admin_created_users')
       .delete()
