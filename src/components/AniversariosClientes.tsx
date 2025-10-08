@@ -1,171 +1,276 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/lib/context';
-import { Calendar, Gift, Phone } from 'lucide-react';
-import { AniversarianteCliente } from '@/lib/types';
+import { Gift, Phone, Calendar, MessageCircle, Search } from 'lucide-react';
+import { formatDate } from '@/lib/utils';
 
 export default function AniversariosClientes() {
   const { clientes } = useApp();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtroMes, setFiltroMes] = useState('todos');
 
+  // Calcular aniversariantes
   const aniversariantes = useMemo(() => {
     const hoje = new Date();
-    const aniversariantesProximos: AniversarianteCliente[] = [];
-
-    clientes.forEach(cliente => {
-      if (!cliente.dataNascimento) return;
-
-      const nascimento = new Date(cliente.dataNascimento);
-      const anoAtual = hoje.getFullYear();
-      
-      // Criar data do aniversário no ano atual
-      const aniversarioEsteAno = new Date(anoAtual, nascimento.getMonth(), nascimento.getDate());
-      
-      // Se já passou este ano, considerar o próximo ano
-      let proximoAniversario = aniversarioEsteAno;
-      if (aniversarioEsteAno < hoje) {
-        proximoAniversario = new Date(anoAtual + 1, nascimento.getMonth(), nascimento.getDate());
-      }
-
-      // Calcular dias até o aniversário
-      const diasAte = Math.ceil((proximoAniversario.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-      
-      // Incluir apenas aniversários nos próximos 90 dias (3 meses)
-      if (diasAte <= 90) {
-        aniversariantesProximos.push({
-          id: cliente.id,
-          nome: cliente.nome,
-          telefone: cliente.telefone,
-          dataNascimento: cliente.dataNascimento,
-          diasParaAniversario: diasAte
-        });
-      }
-    });
-
-    // Ordenar por dias até o aniversário
-    return aniversariantesProximos.sort((a, b) => a.diasParaAniversario - b.diasParaAniversario);
-  }, [clientes]);
+    const mesAtual = hoje.getMonth();
+    
+    return clientes
+      .filter(cliente => cliente.dataNascimento)
+      .map(cliente => {
+        const dataNascimento = new Date(cliente.dataNascimento!);
+        const mesAniversario = dataNascimento.getMonth();
+        const diaAniversario = dataNascimento.getDate();
+        
+        // Calcular próximo aniversário
+        const proximoAniversario = new Date(hoje.getFullYear(), mesAniversario, diaAniversario);
+        if (proximoAniversario < hoje) {
+          proximoAniversario.setFullYear(hoje.getFullYear() + 1);
+        }
+        
+        const diasParaAniversario = Math.ceil((proximoAniversario.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+        
+        return {
+          ...cliente,
+          proximoAniversario,
+          diasParaAniversario,
+          mesAniversario,
+          diaAniversario,
+          idade: hoje.getFullYear() - dataNascimento.getFullYear()
+        };
+      })
+      .filter(cliente => {
+        // Filtro por busca
+        const matchSearch = cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           cliente.telefone.includes(searchTerm);
+        
+        // Filtro por mês
+        let matchMes = true;
+        if (filtroMes !== 'todos') {
+          if (filtroMes === 'este_mes') {
+            matchMes = cliente.mesAniversario === mesAtual;
+          } else if (filtroMes === 'proximo_mes') {
+            const proximoMes = (mesAtual + 1) % 12;
+            matchMes = cliente.mesAniversario === proximoMes;
+          } else if (filtroMes === 'proximos_30_dias') {
+            matchMes = cliente.diasParaAniversario <= 30;
+          }
+        }
+        
+        return matchSearch && matchMes;
+      })
+      .sort((a, b) => a.diasParaAniversario - b.diasParaAniversario);
+  }, [clientes, searchTerm, filtroMes]);
 
   const abrirWhatsApp = (telefone: string, nome: string) => {
     const numeroLimpo = telefone.replace(/\D/g, '');
-    const mensagem = encodeURIComponent(`Olá ${nome}! 🎉 A equipe da JV Celulares gostaria de parabenizá-lo pelo seu aniversário! Desejamos muito sucesso e felicidades! 🎂🎈`);
-    window.open(`https://wa.me/55${numeroLimpo}?text=${mensagem}`, '_blank');
+    const mensagem = `Olá ${nome}! 🎉 A equipe da ${clientes.length > 0 ? 'nossa loja' : 'Gestão Phone'} gostaria de parabenizá-lo(a) pelo seu aniversário! Desejamos muito sucesso, saúde e felicidade! 🎂🎈`;
+    const mensagemCodificada = encodeURIComponent(mensagem);
+    window.open(`https://wa.me/55${numeroLimpo}?text=${mensagemCodificada}`, '_blank');
   };
 
-  const formatarData = (data: string) => {
-    const nascimento = new Date(data);
-    return nascimento.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
-  };
-
-  const getStatusAniversario = (dias: number) => {
-    if (dias === 0) return { texto: 'Hoje!', cor: 'bg-red-100 text-red-800', icone: '🎉' };
-    if (dias === 1) return { texto: 'Amanhã', cor: 'bg-orange-100 text-orange-800', icone: '🎂' };
-    if (dias <= 7) return { texto: `Em ${dias} dias`, cor: 'bg-yellow-100 text-yellow-800', icone: '📅' };
-    if (dias <= 30) return { texto: `Em ${dias} dias`, cor: 'bg-blue-100 text-blue-800', icone: '🗓️' };
-    return { texto: `Em ${dias} dias`, cor: 'bg-gray-100 text-gray-800', icone: '📆' };
-  };
+  const meses = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Aniversários de Clientes</h2>
-        <p className="text-gray-600">Próximos aniversários nos próximos 3 meses</p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Aniversários de Clientes</h2>
+          <p className="text-gray-600">Acompanhe e parabenize seus clientes nos aniversários</p>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="bg-blue-100 p-3 rounded-full">
+            <Gift className="w-6 h-6 text-blue-600" />
+          </div>
+        </div>
       </div>
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Aniversários Hoje</p>
-              <p className="text-2xl font-bold text-red-600">
-                {aniversariantes.filter(a => a.diasParaAniversario === 0).length}
-              </p>
-            </div>
-            <div className="bg-red-100 p-3 rounded-full">
-              <Gift className="w-6 h-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Esta Semana</p>
-              <p className="text-2xl font-bold text-orange-600">
-                {aniversariantes.filter(a => a.diasParaAniversario <= 7).length}
-              </p>
-            </div>
-            <div className="bg-orange-100 p-3 rounded-full">
-              <Calendar className="w-6 h-6 text-orange-600" />
-            </div>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Este Mês</p>
               <p className="text-2xl font-bold text-blue-600">
-                {aniversariantes.filter(a => a.diasParaAniversario <= 30).length}
+                {aniversariantes.filter(c => c.mesAniversario === new Date().getMonth()).length}
               </p>
             </div>
-            <div className="bg-blue-100 p-3 rounded-full">
-              <Calendar className="w-6 h-6 text-blue-600" />
+            <Calendar className="w-8 h-8 text-blue-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Próximos 7 Dias</p>
+              <p className="text-2xl font-bold text-green-600">
+                {aniversariantes.filter(c => c.diasParaAniversario <= 7).length}
+              </p>
             </div>
+            <Gift className="w-8 h-8 text-green-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Próximos 30 Dias</p>
+              <p className="text-2xl font-bold text-orange-600">
+                {aniversariantes.filter(c => c.diasParaAniversario <= 30).length}
+              </p>
+            </div>
+            <Calendar className="w-8 h-8 text-orange-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Cadastrados</p>
+              <p className="text-2xl font-bold text-purple-600">
+                {clientes.filter(c => c.dataNascimento).length}
+              </p>
+            </div>
+            <Phone className="w-8 h-8 text-purple-600" />
           </div>
         </div>
       </div>
 
-      {/* Lista de aniversariantes */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Próximos Aniversários</h3>
-        </div>
-
-        <div className="divide-y divide-gray-200">
-          {aniversariantes.length > 0 ? (
-            aniversariantes.map(aniversariante => {
-              const status = getStatusAniversario(aniversariante.diasParaAniversario);
-              
-              return (
-                <div key={aniversariante.id} className="p-6 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="text-2xl">{status.icone}</div>
-                      <div>
-                        <h4 className="text-lg font-medium text-gray-900">{aniversariante.nome}</h4>
-                        <p className="text-sm text-gray-500">
-                          Aniversário: {formatarData(aniversariante.dataNascimento)}
-                        </p>
-                        <p className="text-sm text-gray-500">{aniversariante.telefone}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${status.cor}`}>
-                        {status.texto}
-                      </span>
-                      
-                      <button
-                        onClick={() => abrirWhatsApp(aniversariante.telefone, aniversariante.nome)}
-                        className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg transition-colors"
-                        title="Enviar parabéns via WhatsApp"
-                      >
-                        <Phone className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="p-8 text-center text-gray-500">
-              <Gift className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p>Nenhum aniversário nos próximos 3 meses</p>
-              <p className="text-sm mt-1">Cadastre as datas de nascimento dos clientes para ver os aniversários aqui</p>
+      {/* Filtros */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Pesquisar por nome ou telefone..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-          )}
+          </div>
+          
+          <div>
+            <select
+              value={filtroMes}
+              onChange={(e) => setFiltroMes(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="todos">Todos os períodos</option>
+              <option value="este_mes">Este mês</option>
+              <option value="proximo_mes">Próximo mês</option>
+              <option value="proximos_30_dias">Próximos 30 dias</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de Aniversariantes */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Lista de Aniversariantes ({aniversariantes.length})
+          </h3>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aniversário</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Idade</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dias Restantes</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {aniversariantes.map(cliente => (
+                <tr key={cliente.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{cliente.nome}</div>
+                      <div className="text-sm text-gray-500">{cliente.telefone}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {cliente.diaAniversario} de {meses[cliente.mesAniversario]}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {formatDate(cliente.proximoAniversario)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {cliente.idade} anos
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      cliente.diasParaAniversario === 0
+                        ? 'bg-red-100 text-red-800'
+                        : cliente.diasParaAniversario <= 7
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : cliente.diasParaAniversario <= 30
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {cliente.diasParaAniversario === 0 
+                        ? 'Hoje!' 
+                        : cliente.diasParaAniversario === 1
+                        ? 'Amanhã'
+                        : `${cliente.diasParaAniversario} dias`
+                      }
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => abrirWhatsApp(cliente.telefone, cliente.nome)}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg flex items-center gap-2 transition-colors"
+                      title="Enviar parabéns via WhatsApp"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Parabenizar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              
+              {aniversariantes.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                    <div className="flex flex-col items-center gap-2">
+                      <Gift className="w-12 h-12 text-gray-300" />
+                      <p>Nenhum aniversariante encontrado</p>
+                      <p className="text-sm">Verifique os filtros ou cadastre as datas de nascimento dos clientes</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Dicas */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+        <div className="flex items-start gap-3">
+          <Gift className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-medium text-blue-900 mb-2">Dicas para Relacionamento com Clientes</h4>
+            <ul className="text-sm text-blue-800 space-y-1">
+              <li>• Parabenize seus clientes no aniversário para fortalecer o relacionamento</li>
+              <li>• Considere oferecer descontos especiais para aniversariantes</li>
+              <li>• Use o WhatsApp para enviar mensagens personalizadas</li>
+              <li>• Mantenha as datas de nascimento sempre atualizadas no cadastro</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
