@@ -13,7 +13,9 @@ import {
   AlertCircle,
   CheckCircle,
   LogOut,
-  Shield
+  Shield,
+  Mail,
+  Key
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { User } from '@/lib/types';
@@ -22,32 +24,56 @@ export default function AdminPanel() {
   const { user, logout, usuarios, criarUsuario, removerUsuario } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<any>({});
+  const [isCreating, setIsCreating] = useState(false);
+  const [createMessage, setCreateMessage] = useState('');
 
   const resetForm = () => {
     setFormData({});
     setShowForm(false);
+    setCreateMessage('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreating(true);
+    setCreateMessage('');
     
-    // Calcular data de expiração
-    const agora = new Date();
-    const diasAcesso = parseInt(formData.tempoAcesso);
-    const dataExpiracao = new Date(agora.getTime() + (diasAcesso * 24 * 60 * 60 * 1000));
-    
-    const novoUsuario = {
-      username: formData.username,
-      password: formData.password,
-      role: formData.tipoUsuario === 'admin' ? 'admin' as const : 'user' as const,
-      type: 'normal' as const,
-      tempoAcesso: diasAcesso,
-      expiresAt: dataExpiracao.toISOString(),
-      dadosLoja: undefined // Usuários novos não terão dados da JV Celulares
-    };
-    
-    criarUsuario(novoUsuario);
-    resetForm();
+    try {
+      // Calcular data de expiração
+      const agora = new Date();
+      const diasAcesso = parseInt(formData.tempoAcesso);
+      const dataExpiracao = new Date(agora.getTime() + (diasAcesso * 24 * 60 * 60 * 1000));
+      
+      const novoUsuario = {
+        username: formData.username,
+        password: formData.password,
+        role: formData.tipoUsuario === 'admin' ? 'admin' as const : 'user' as const,
+        type: 'normal' as const,
+        tempoAcesso: diasAcesso,
+        expiresAt: dataExpiracao.toISOString(),
+        dadosLoja: undefined // Usuários novos não terão dados da loja principal
+      };
+      
+      await criarUsuario(novoUsuario);
+      
+      // Verificar se é um e-mail (indicando criação no Supabase)
+      if (formData.username.includes('@')) {
+        setCreateMessage('Usuário criado com sucesso no Supabase! O usuário pode fazer login com essas credenciais.');
+      } else {
+        setCreateMessage('Usuário criado com sucesso localmente!');
+      }
+      
+      // Limpar formulário após 3 segundos
+      setTimeout(() => {
+        resetForm();
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Erro ao criar usuário:', error);
+      setCreateMessage('Erro ao criar usuário. Tente novamente.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const calcularDiasRestantes = (expiresAt: string) => {
@@ -143,6 +169,24 @@ export default function AdminPanel() {
             </div>
           </div>
 
+          {/* Informações sobre Integração Supabase */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="bg-blue-100 p-2 rounded-full">
+                <Shield className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-blue-900 mb-2">Integração com Supabase Auth</h3>
+                <div className="text-sm text-blue-800 space-y-2">
+                  <p><strong>✅ Usuários com E-mail:</strong> Criados automaticamente no Supabase Auth para login seguro</p>
+                  <p><strong>🔐 Autenticação:</strong> Usuários podem fazer login com e-mail e senha do Supabase</p>
+                  <p><strong>🏪 Dados Independentes:</strong> Cada usuário tem seu próprio perfil de loja isolado</p>
+                  <p><strong>📱 Recuperação de Senha:</strong> Disponível para usuários com e-mail cadastrado</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Gerenciamento de Usuários */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="p-6 border-b border-gray-200">
@@ -178,13 +222,24 @@ export default function AdminPanel() {
                   {usuarios.map(usuario => {
                     const diasRestantes = usuario.expiresAt ? calcularDiasRestantes(usuario.expiresAt) : null;
                     const isExpired = diasRestantes !== null && diasRestantes <= 0;
+                    const isSupabaseUser = usuario.username.includes('@');
                     
                     return (
                       <tr key={usuario.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{usuario.username}</div>
-                            <div className="text-sm text-gray-500">ID: {usuario.id}</div>
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                                {usuario.username}
+                                {isSupabaseUser && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    <Shield className="w-3 h-3 mr-1" />
+                                    Supabase
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-500">ID: {usuario.id}</div>
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -249,7 +304,7 @@ export default function AdminPanel() {
         {/* Modal de novo usuário */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold text-gray-900">Criar Novo Usuário</h3>
@@ -263,27 +318,42 @@ export default function AdminPanel() {
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome de Usuário</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.username || ''}
-                      onChange={(e) => setFormData({...formData, username: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                      placeholder="Digite o nome de usuário"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      E-mail ou Nome de Usuário
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        required
+                        value={formData.username || ''}
+                        onChange={(e) => setFormData({...formData, username: e.target.value})}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        placeholder="usuario@email.com ou nome_usuario"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Use e-mail para criar no Supabase Auth (recomendado)
+                    </p>
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                    <input
-                      type="password"
-                      required
-                      value={formData.password || ''}
-                      onChange={(e) => setFormData({...formData, password: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                      placeholder="Digite a senha"
-                    />
+                    <div className="relative">
+                      <Key className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="password"
+                        required
+                        value={formData.password || ''}
+                        onChange={(e) => setFormData({...formData, password: e.target.value})}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        placeholder="Digite a senha"
+                        minLength={6}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Mínimo 6 caracteres
+                    </p>
                   </div>
 
                   <div>
@@ -314,33 +384,59 @@ export default function AdminPanel() {
                       <option value="15">15 dias</option>
                       <option value="30">30 dias</option>
                       <option value="90">90 dias</option>
+                      <option value="365">1 ano</option>
                     </select>
                   </div>
 
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                     <div className="flex items-start gap-2">
-                      <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm text-yellow-800">
-                        <p className="font-medium">Importante:</p>
-                        <p>Cada usuário terá seu próprio perfil individual com dados exclusivos. Usuários comuns não terão acesso aos dados da JV Celulares.</p>
+                      <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm text-blue-800">
+                        <p className="font-medium">Integração Supabase:</p>
+                        <p>• E-mail: Criado no Supabase Auth + perfil de loja independente</p>
+                        <p>• Nome: Criado apenas localmente</p>
+                        <p>• Cada usuário terá dados completamente isolados</p>
                       </div>
                     </div>
                   </div>
+
+                  {/* Mensagem de Sucesso/Erro */}
+                  {createMessage && (
+                    <div className={`flex items-center gap-2 p-3 rounded-lg ${
+                      createMessage.includes('sucesso') 
+                        ? 'bg-green-50 border border-green-200 text-green-700'
+                        : 'bg-red-50 border border-red-200 text-red-700'
+                    }`}>
+                      <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                      <span className="text-sm">{createMessage}</span>
+                    </div>
+                  )}
 
                   <div className="flex justify-end gap-3 pt-4">
                     <button
                       type="button"
                       onClick={resetForm}
                       className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      disabled={isCreating}
                     >
                       Cancelar
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      disabled={isCreating}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
                     >
-                      <Save className="w-4 h-4" />
-                      Criar Usuário
+                      {isCreating ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Criando...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Criar Usuário
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
