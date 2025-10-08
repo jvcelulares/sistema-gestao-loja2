@@ -10,6 +10,17 @@ export interface User {
   createdAt: string;
 }
 
+export interface Vendedor {
+  id: string;
+  nome: string;
+  telefone?: string;
+  email?: string;
+  comissao?: number; // percentual de comissão
+  ativo: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Produto {
   id: string;
   nome: string;
@@ -63,7 +74,8 @@ export interface Venda {
   nomeCliente: string;
   telefoneCliente?: string;
   clienteId?: string;
-  vendedor: 'João' | 'Gabriel';
+  vendedorId?: string; // Referência ao vendedor
+  vendedor: string; // Nome do vendedor (mantido para compatibilidade)
   formaPagamento: 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'pix';
   itens: ItemVenda[];
   subtotal?: number;
@@ -72,7 +84,7 @@ export interface Venda {
   lucro?: number;
   comissao?: number;
   observacoes?: string;
-  termoGarantiaId?: string; // Novo campo para termo de garantia
+  termoGarantiaId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -97,7 +109,7 @@ export interface Manutencao {
   dataEntrega?: string;
   status: 'recebido' | 'em_andamento' | 'concluido' | 'entregue' | 'cancelado';
   observacoes?: string;
-  termoGarantiaId?: string; // Novo campo para termo de garantia
+  termoGarantiaId?: string;
   createdAt: string;
   updatedAt: string;
 }
