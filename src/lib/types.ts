@@ -72,6 +72,7 @@ export interface Venda {
   lucro?: number;
   comissao?: number;
   observacoes?: string;
+  termoGarantiaId?: string; // Novo campo para termo de garantia
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +97,21 @@ export interface Manutencao {
   dataEntrega?: string;
   status: 'recebido' | 'em_andamento' | 'concluido' | 'entregue' | 'cancelado';
   observacoes?: string;
+  termoGarantiaId?: string; // Novo campo para termo de garantia
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Nova interface para Termos de Garantia
+export interface TermoGarantia {
+  id: string;
+  nome: string;
+  descricao: string;
+  prazoGarantia: number; // em dias
+  condicoes: string;
+  aplicaVendas: boolean;
+  aplicaManutencoes: boolean;
+  ativo: boolean;
   createdAt: string;
   updatedAt: string;
 }
