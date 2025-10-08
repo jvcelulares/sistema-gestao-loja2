@@ -1,10 +1,10 @@
 import { DadosLoja } from './types';
 
 export const DADOS_LOJA: DadosLoja = {
-  nome: 'JV CELULARES E ACESSÓRIOS',
+  nome: 'Gestão Phone',
   cnpj: '51.475.193/0001-78',
   telefone: '(13) 99646-2348',
-  email: 'contato@jvcelulares.com.br',
+  email: 'contato@gestao-phone.com.br',
   endereco: 'AV ACARAU 298 GUARUJÁ VILA AUREA'
 };
 
