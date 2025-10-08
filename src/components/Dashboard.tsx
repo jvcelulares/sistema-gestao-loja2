@@ -35,16 +35,17 @@ import {
   HelpCircle,
   Shield,
   Upload,
-  Image
+  Image,
+  UserCheck
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Produto, Cliente, Venda, Manutencao, TermoGarantia } from '@/lib/types';
+import { Produto, Cliente, Venda, Manutencao, TermoGarantia, Vendedor } from '@/lib/types';
 import { generateSalePDF, generateMaintenancePDF, downloadPDF } from '@/lib/pdfGenerator';
 import { exportSalesToCSV, exportMaintenancesToCSV, exportCustomersToCSV, exportProductsToCSV } from '@/lib/csvExporter';
 import AniversariosClientes from '@/components/AniversariosClientes';
 import Suporte from '@/components/Suporte';
 
-type ActiveModule = 'dashboard' | 'estoque' | 'vendas' | 'clientes' | 'manutencao' | 'relatorios' | 'configuracoes' | 'aniversarios' | 'suporte' | 'termos-garantia';
+type ActiveModule = 'dashboard' | 'estoque' | 'vendas' | 'clientes' | 'manutencao' | 'relatorios' | 'configuracoes' | 'aniversarios' | 'suporte' | 'termos-garantia' | 'vendedores';
 
 export default function Dashboard() {
   const { 
@@ -55,12 +56,14 @@ export default function Dashboard() {
     manutencoes, 
     clientes, 
     termosGarantia,
+    vendedores,
     dadosLoja,
     adicionarProduto, 
     adicionarCliente, 
     adicionarVenda, 
     adicionarManutencao, 
     adicionarTermoGarantia,
+    adicionarVendedor,
     atualizarProduto, 
     removerProduto, 
     atualizarVenda, 
@@ -69,6 +72,8 @@ export default function Dashboard() {
     removerManutencao,
     atualizarTermoGarantia,
     removerTermoGarantia,
+    atualizarVendedor,
+    removerVendedor,
     atualizarDadosLoja
   } = useApp();
   
@@ -183,6 +188,7 @@ export default function Dashboard() {
     { id: 'vendas', label: 'Vendas', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'manutencao', label: 'Manutenção', icon: Wrench },
+    { id: 'vendedores', label: 'Vendedores', icon: UserCheck },
     { id: 'termos-garantia', label: 'Termos de Garantia', icon: Shield },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { id: 'aniversarios', label: 'Aniversários', icon: Gift },
@@ -255,6 +261,11 @@ export default function Dashboard() {
   // Função para gerar comprovante de manutenção em PDF - CORRIGIDA
   const gerarComprovanteManutencaoPDF = (manutencao: Manutencao) => {
     try {
+      // Buscar termo de garantia se existir
+      const termoGarantia = manutencao.termoGarantiaId 
+        ? termosGarantia.find(t => t.id === manutencao.termoGarantiaId)
+        : null;
+
       const maintenanceData = {
         id: manutencao.id,
         customerName: manutencao.nomeCliente,
@@ -268,7 +279,13 @@ export default function Dashboard() {
         price: manutencao.valorServico,
         paymentMethod: manutencao.formaPagamento || '',
         entryDate: manutencao.createdAt,
-        deliveryDate: manutencao.dataPrevistaEntrega
+        deliveryDate: manutencao.dataPrevistaEntrega,
+        warrantyTerm: termoGarantia ? {
+          name: termoGarantia.nome,
+          description: termoGarantia.descricao,
+          period: termoGarantia.prazoGarantia,
+          conditions: termoGarantia.condicoes
+        } : null
       };
 
       const storeInfo = {
@@ -428,6 +445,20 @@ export default function Dashboard() {
             adicionarTermoGarantia(novoTermo);
           }
           break;
+        case 'vendedores':
+          if (editingItem) {
+            atualizarVendedor(editingItem.id, formData);
+          } else {
+            const novoVendedor: Vendedor = {
+              id: Date.now().toString(),
+              ...formData,
+              ativo: true,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            adicionarVendedor(novoVendedor);
+          }
+          break;
       }
       
       resetForm();
@@ -444,7 +475,9 @@ export default function Dashboard() {
     setFormData({
       nomeCliente: '',
       telefoneCliente: '',
-      vendedor: 'João',
+      clienteId: '',
+      vendedorId: '',
+      vendedor: vendedores.length > 0 ? vendedores[0].nome : '',
       formaPagamento: 'dinheiro',
       itens: [{
         produtoId: '',
@@ -454,7 +487,8 @@ export default function Dashboard() {
         desconto: 0,
         subtotal: 0
       }],
-      total: 0
+      total: 0,
+      termoGarantiaId: ''
     });
     setEditingItem(null);
     setShowForm(true);
@@ -483,6 +517,7 @@ export default function Dashboard() {
     setFormData({
       nomeCliente: '',
       telefoneCliente: '',
+      clienteId: '',
       nomeAparelho: '',
       modeloAparelho: '',
       imeiAparelho: '',
@@ -492,7 +527,8 @@ export default function Dashboard() {
       valorServico: 0,
       custoMaterial: 0,
       formaPagamento: 'dinheiro',
-      dataPrevistaEntrega: ''
+      dataPrevistaEntrega: '',
+      termoGarantiaId: ''
     });
     setEditingItem(null);
     setShowForm(true);
@@ -769,6 +805,202 @@ export default function Dashboard() {
     </div>
   );
 
+  // Renderizar conteúdo dos Vendedores
+  const renderVendedoresContent = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Vendedores</h2>
+          <p className="text-gray-600">Gerencie sua equipe de vendas</p>
+        </div>
+        
+        <button
+          onClick={() => {
+            setFormData({
+              nome: '',
+              telefone: '',
+              email: '',
+              comissao: 0
+            });
+            setEditingItem(null);
+            setShowForm(true);
+          }}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          Novo Vendedor
+        </button>
+      </div>
+
+      {/* Lista de vendedores */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contato</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comissão</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {vendedores.map(vendedor => (
+                <tr key={vendedor.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{vendedor.nome}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{vendedor.telefone}</div>
+                    <div className="text-sm text-gray-500">{vendedor.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {vendedor.comissao ? `${vendedor.comissao}%` : 'Não definida'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      vendedor.ativo 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {vendedor.ativo ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingItem(vendedor);
+                          setFormData(vendedor);
+                          setShowForm(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => removerVendedor(vendedor.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal de formulário */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingItem ? 'Editar Vendedor' : 'Novo Vendedor'}
+                </h3>
+                <button
+                  onClick={resetForm}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.nome || ''}
+                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Ex: João Silva"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                    <input
+                      type="tel"
+                      value={formData.telefone || ''}
+                      onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="(13) 99999-9999"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                    <input
+                      type="email"
+                      value={formData.email || ''}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="joao@email.com"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Comissão (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={formData.comissao || ''}
+                      onChange={(e) => setFormData({...formData, comissao: parseFloat(e.target.value)})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="5.0"
+                    />
+                  </div>
+                </div>
+
+                {editingItem && (
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="ativo"
+                      checked={formData.ativo !== false}
+                      onChange={(e) => setFormData({...formData, ativo: e.target.checked})}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="ativo" className="ml-2 block text-sm text-gray-900">
+                      Vendedor ativo
+                    </label>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    {editingItem ? 'Atualizar' : 'Salvar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // Renderizar conteúdo dos Termos de Garantia
   const renderTermosGarantiaContent = () => (
     <div className="space-y-6">
@@ -998,234 +1230,179 @@ export default function Dashboard() {
     </div>
   );
 
-  // RENDERIZAR CONFIGURAÇÕES - CORRIGIDO PARA SEPARAR DADOS DE ADMIN VS USUÁRIO
+  // RENDERIZAR CONFIGURAÇÕES - CORRIGIDO PARA CADA USUÁRIO
   const renderConfiguracoes = () => (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Configurações do Sistema</h2>
-        <p className="text-gray-600">
-          {user?.username === 'jvcell2023' || user?.role === 'super_admin' 
-            ? 'Personalize as configurações da sua loja' 
-            : 'Configurações pessoais do usuário'
-          }
-        </p>
+        <h2 className="text-2xl font-bold text-gray-900">Configurações da Loja</h2>
+        <p className="text-gray-600">Configure os dados da sua loja para aparecer nos comprovantes</p>
       </div>
 
-      {/* DADOS DA LOJA - APENAS PARA ADMIN */}
-      {(user?.username === 'jvcell2023' || user?.role === 'super_admin') && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Dados da Loja</h3>
-            <button
-              onClick={() => setEditandoDadosLoja(!editandoDadosLoja)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <Edit className="w-4 h-4" />
-              {editandoDadosLoja ? 'Cancelar' : 'Editar'}
-            </button>
-          </div>
+      {/* DADOS DA LOJA - PARA TODOS OS USUÁRIOS */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Dados da Loja</h3>
+          <button
+            onClick={() => setEditandoDadosLoja(!editandoDadosLoja)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <Edit className="w-4 h-4" />
+            {editandoDadosLoja ? 'Cancelar' : 'Editar'}
+          </button>
+        </div>
 
-          {editandoDadosLoja ? (
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              setEditandoDadosLoja(false);
-            }} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Loja</label>
-                  <input
-                    type="text"
-                    value={dadosLoja.nome}
-                    onChange={(e) => atualizarDadosLoja({ nome: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
-                  <input
-                    type="text"
-                    value={dadosLoja.cnpj}
-                    onChange={(e) => atualizarDadosLoja({ cnpj: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                  <input
-                    type="tel"
-                    value={dadosLoja.telefone}
-                    onChange={(e) => atualizarDadosLoja({ telefone: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
-                  <input
-                    type="email"
-                    value={dadosLoja.email}
-                    onChange={(e) => atualizarDadosLoja({ email: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
-                  <input
-                    type="text"
-                    value={dadosLoja.endereco}
-                    onChange={(e) => atualizarDadosLoja({ endereco: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+        {editandoDadosLoja ? (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            setEditandoDadosLoja(false);
+          }} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Loja</label>
+                <input
+                  type="text"
+                  value={dadosLoja.nome}
+                  onChange={(e) => atualizarDadosLoja({ nome: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
+                <input
+                  type="text"
+                  value={dadosLoja.cnpj}
+                  onChange={(e) => atualizarDadosLoja({ cnpj: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
 
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEditandoDadosLoja(false)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  Salvar Alterações
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input
+                  type="tel"
+                  value={dadosLoja.telefone}
+                  onChange={(e) => atualizarDadosLoja({ telefone: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
-            </form>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Nome da Loja</label>
-                  <p className="text-lg text-gray-900">{dadosLoja.nome}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">CNPJ</label>
-                  <p className="text-lg text-gray-900">{dadosLoja.cnpj}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Telefone</label>
-                  <p className="text-lg text-gray-900">{dadosLoja.telefone}</p>
-                </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                <input
+                  type="email"
+                  value={dadosLoja.email}
+                  onChange={(e) => atualizarDadosLoja({ email: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">E-mail</label>
-                  <p className="text-lg text-gray-900">{dadosLoja.email}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Endereço</label>
-                  <p className="text-lg text-gray-900">{dadosLoja.endereco}</p>
-                </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <input
+                  type="text"
+                  value={dadosLoja.endereco}
+                  onChange={(e) => atualizarDadosLoja({ endereco: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* LOGO DA LOJA - APENAS PARA ADMIN */}
-      {(user?.username === 'jvcell2023' || user?.role === 'super_admin') && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Logo da Loja</h3>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setEditandoDadosLoja(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Salvar Alterações
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-500">Nome da Loja</label>
+                <p className="text-lg text-gray-900">{dadosLoja.nome}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">CNPJ</label>
+                <p className="text-lg text-gray-900">{dadosLoja.cnpj}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Telefone</label>
+                <p className="text-lg text-gray-900">{dadosLoja.telefone}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-500">E-mail</label>
+                <p className="text-lg text-gray-900">{dadosLoja.email}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Endereço</label>
+                <p className="text-lg text-gray-900">{dadosLoja.endereco}</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* LOGO DA LOJA */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Logo da Loja</h3>
+        
+        <div className="flex items-center gap-6">
+          <div className="flex-shrink-0">
+            {dadosLoja.logo ? (
+              <img 
+                src={dadosLoja.logo} 
+                alt="Logo da Loja" 
+                className="w-24 h-24 object-contain border border-gray-200 rounded-lg"
+              />
+            ) : (
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <span className="text-white text-2xl font-bold">GP</span>
+              </div>
+            )}
+          </div>
           
-          <div className="flex items-center gap-6">
-            <div className="flex-shrink-0">
-              {dadosLoja.logo ? (
-                <img 
-                  src={dadosLoja.logo} 
-                  alt="Logo da Loja" 
-                  className="w-24 h-24 object-contain border border-gray-200 rounded-lg"
+          <div className="flex-1">
+            <p className="text-sm text-gray-600 mb-3">
+              Carregue uma logo personalizada para sua loja. A logo será exibida nos comprovantes de venda e manutenção.
+            </p>
+            
+            <div className="flex items-center gap-3">
+              <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors">
+                <Upload className="w-4 h-4" />
+                Carregar Logo
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="hidden"
                 />
-              ) : (
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-2xl font-bold">GP</span>
-                </div>
+              </label>
+              
+              {dadosLoja.logo && (
+                <button
+                  onClick={() => atualizarDadosLoja({ logo: undefined })}
+                  className="text-red-600 hover:text-red-700 px-3 py-2 text-sm"
+                >
+                  Remover Logo
+                </button>
               )}
             </div>
-            
-            <div className="flex-1">
-              <p className="text-sm text-gray-600 mb-3">
-                Carregue uma logo personalizada para sua loja. A logo será exibida na tela de login e em todo o sistema.
-              </p>
-              
-              <div className="flex items-center gap-3">
-                <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors">
-                  <Upload className="w-4 h-4" />
-                  Carregar Logo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="hidden"
-                  />
-                </label>
-                
-                {dadosLoja.logo && (
-                  <button
-                    onClick={() => atualizarDadosLoja({ logo: undefined })}
-                    className="text-red-600 hover:text-red-700 px-3 py-2 text-sm"
-                  >
-                    Remover Logo
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         </div>
-      )}
-
-      {/* CONFIGURAÇÕES PESSOAIS DO USUÁRIO - PARA USUÁRIOS NORMAIS */}
-      {user?.username !== 'jvcell2023' && user?.role !== 'super_admin' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurações Pessoais</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome de Usuário</label>
-              <input
-                type="text"
-                value={user?.username || ''}
-                disabled
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Conta</label>
-              <input
-                type="text"
-                value={user?.role === 'admin' ? 'Administrador' : 'Usuário'}
-                disabled
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data de Criação</label>
-              <input
-                type="text"
-                value={user?.createdAt ? formatDate(new Date(user.createdAt)) : ''}
-                disabled
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-500"
-              />
-            </div>
-          </div>
-          
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700">
-              <strong>Nota:</strong> As configurações da loja são gerenciadas pelo administrador principal. 
-              Você pode gerenciar seus próprios dados de vendas, clientes e produtos.
-            </p>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Configurações do Sistema */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -1538,6 +1715,7 @@ export default function Dashboard() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produtos</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pagamento</th>
@@ -1551,6 +1729,15 @@ export default function Dashboard() {
                     <div>
                       <div className="font-medium text-gray-900">{venda.nomeCliente}</div>
                       <div className="text-sm text-gray-500">{venda.telefoneCliente}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">
+                      {venda.itens.map(item => (
+                        <div key={item.produtoId}>
+                          {item.nomeProduto} (x{item.quantidade})
+                        </div>
+                      ))}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900">
@@ -1588,10 +1775,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FORMULÁRIO DE VENDA - CORRIGIDO */}
+      {/* FORMULÁRIO DE VENDA - CORRIGIDO COM PRODUTOS E CLIENTES */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -1605,42 +1792,238 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Cliente</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.nomeCliente || ''}
-                      onChange={(e) => setFormData({...formData, nomeCliente: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Seção do Cliente */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-md font-semibold text-gray-900 mb-4">Dados do Cliente</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Cliente Cadastrado</label>
+                      <select
+                        value={formData.clienteId || ''}
+                        onChange={(e) => {
+                          const clienteId = e.target.value;
+                          const cliente = clientes.find(c => c.id === clienteId);
+                          if (cliente) {
+                            setFormData({
+                              ...formData,
+                              clienteId: cliente.id,
+                              nomeCliente: cliente.nome,
+                              telefoneCliente: cliente.telefone
+                            });
+                          } else {
+                            setFormData({
+                              ...formData,
+                              clienteId: '',
+                              nomeCliente: '',
+                              telefoneCliente: ''
+                            });
+                          }
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Selecionar cliente ou digitar manualmente</option>
+                        {clientes.map(cliente => (
+                          <option key={cliente.id} value={cliente.id}>
+                            {cliente.nome} - {cliente.telefone}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Telefone do Cliente</label>
-                    <input
-                      type="tel"
-                      value={formData.telefoneCliente || ''}
-                      onChange={(e) => setFormData({...formData, telefoneCliente: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Vendedor</label>
+                      <select
+                        required
+                        value={formData.vendedorId || ''}
+                        onChange={(e) => {
+                          const vendedorId = e.target.value;
+                          const vendedor = vendedores.find(v => v.id === vendedorId);
+                          setFormData({
+                            ...formData,
+                            vendedorId: vendedorId,
+                            vendedor: vendedor ? vendedor.nome : ''
+                          });
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Selecionar vendedor</option>
+                        {vendedores.filter(v => v.ativo).map(vendedor => (
+                          <option key={vendedor.id} value={vendedor.id}>
+                            {vendedor.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Vendedor</label>
-                    <select
-                      required
-                      value={formData.vendedor || 'João'}
-                      onChange={(e) => setFormData({...formData, vendedor: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="João">João</option>
-                      <option value="Gabriel">Gabriel</option>
-                    </select>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Cliente</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.nomeCliente || ''}
+                        onChange={(e) => setFormData({...formData, nomeCliente: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Digite o nome do cliente"
+                      />
+                    </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Telefone do Cliente</label>
+                      <input
+                        type="tel"
+                        value={formData.telefoneCliente || ''}
+                        onChange={(e) => setFormData({...formData, telefoneCliente: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="(13) 99999-9999"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção dos Produtos */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-md font-semibold text-gray-900 mb-4">Produtos da Venda</h4>
+                  {formData.itens && formData.itens.map((item: any, index: number) => (
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 p-4 bg-white rounded-lg">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Produto</label>
+                        <select
+                          required
+                          value={item.produtoId || ''}
+                          onChange={(e) => {
+                            const produtoId = e.target.value;
+                            const produto = produtos.find(p => p.id === produtoId);
+                            const novosItens = [...formData.itens];
+                            if (produto) {
+                              novosItens[index] = {
+                                ...item,
+                                produtoId: produto.id,
+                                nomeProduto: produto.nome,
+                                precoUnitario: produto.precoVenda,
+                                subtotal: produto.precoVenda * (item.quantidade || 1)
+                              };
+                            }
+                            setFormData({...formData, itens: novosItens});
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Selecionar produto</option>
+                          {produtos.filter(p => p.quantidadeEstoque > 0).map(produto => (
+                            <option key={produto.id} value={produto.id}>
+                              {produto.nome} - {formatCurrency(produto.precoVenda)} (Estoque: {produto.quantidadeEstoque})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={item.quantidade || 1}
+                          onChange={(e) => {
+                            const quantidade = parseInt(e.target.value);
+                            const novosItens = [...formData.itens];
+                            novosItens[index] = {
+                              ...item,
+                              quantidade,
+                              subtotal: (item.precoUnitario || 0) * quantidade - (item.desconto || 0)
+                            };
+                            setFormData({...formData, itens: novosItens});
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Preço Unit.</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={item.precoUnitario || 0}
+                          onChange={(e) => {
+                            const precoUnitario = parseFloat(e.target.value);
+                            const novosItens = [...formData.itens];
+                            novosItens[index] = {
+                              ...item,
+                              precoUnitario,
+                              subtotal: precoUnitario * (item.quantidade || 1) - (item.desconto || 0)
+                            };
+                            setFormData({...formData, itens: novosItens});
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Desconto</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.desconto || 0}
+                          onChange={(e) => {
+                            const desconto = parseFloat(e.target.value) || 0;
+                            const novosItens = [...formData.itens];
+                            novosItens[index] = {
+                              ...item,
+                              desconto,
+                              subtotal: (item.precoUnitario || 0) * (item.quantidade || 1) - desconto
+                            };
+                            setFormData({...formData, itens: novosItens});
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div className="flex items-end">
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Subtotal</label>
+                          <div className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-700">
+                            {formatCurrency(item.subtotal || 0)}
+                          </div>
+                        </div>
+                        {formData.itens.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const novosItens = formData.itens.filter((_: any, i: number) => i !== index);
+                              setFormData({...formData, itens: novosItens});
+                            }}
+                            className="ml-2 p-2 text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const novosItens = [...(formData.itens || []), {
+                        produtoId: '',
+                        nomeProduto: '',
+                        quantidade: 1,
+                        precoUnitario: 0,
+                        desconto: 0,
+                        subtotal: 0
+                      }];
+                      setFormData({...formData, itens: novosItens});
+                    }}
+                    className="w-full p-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
+                  >
+                    + Adicionar Produto
+                  </button>
+                </div>
+
+                {/* Seção de Pagamento e Garantia */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Forma de Pagamento</label>
                     <select
@@ -1656,16 +2039,27 @@ export default function Dashboard() {
                     </select>
                   </div>
 
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Total da Venda</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formData.total || ''}
-                      onChange={(e) => setFormData({...formData, total: parseFloat(e.target.value)})}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Termo de Garantia</label>
+                    <select
+                      value={formData.termoGarantiaId || ''}
+                      onChange={(e) => setFormData({...formData, termoGarantiaId: e.target.value})}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    >
+                      <option value="">Sem garantia específica</option>
+                      {termosGarantia.filter(t => t.ativo && t.aplicaVendas).map(termo => (
+                        <option key={termo.id} value={termo.id}>
+                          {termo.nome} ({termo.prazoGarantia} dias)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total da Venda</label>
+                    <div className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-100 text-gray-700 font-bold text-lg">
+                      {formatCurrency(formData.itens?.reduce((total: number, item: any) => total + (item.subtotal || 0), 0) || 0)}
+                    </div>
                   </div>
                 </div>
 
@@ -1679,6 +2073,10 @@ export default function Dashboard() {
                   </button>
                   <button
                     type="submit"
+                    onClick={() => {
+                      const total = formData.itens?.reduce((total: number, item: any) => total + (item.subtotal || 0), 0) || 0;
+                      setFormData({...formData, total});
+                    }}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
                   >
                     <Save className="w-4 h-4" />
@@ -1989,7 +2387,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FORMULÁRIO DE MANUTENÇÃO - CORRIGIDO */}
+      {/* FORMULÁRIO DE MANUTENÇÃO - CORRIGIDO COM CLIENTES E TERMOS */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -2008,6 +2406,56 @@ export default function Dashboard() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cliente Cadastrado</label>
+                    <select
+                      value={formData.clienteId || ''}
+                      onChange={(e) => {
+                        const clienteId = e.target.value;
+                        const cliente = clientes.find(c => c.id === clienteId);
+                        if (cliente) {
+                          setFormData({
+                            ...formData,
+                            clienteId: cliente.id,
+                            nomeCliente: cliente.nome,
+                            telefoneCliente: cliente.telefone
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            clienteId: '',
+                            nomeCliente: '',
+                            telefoneCliente: ''
+                          });
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    >
+                      <option value="">Selecionar cliente ou digitar manualmente</option>
+                      {clientes.map(cliente => (
+                        <option key={cliente.id} value={cliente.id}>
+                          {cliente.nome} - {cliente.telefone}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Termo de Garantia</label>
+                    <select
+                      value={formData.termoGarantiaId || ''}
+                      onChange={(e) => setFormData({...formData, termoGarantiaId: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    >
+                      <option value="">Sem garantia específica</option>
+                      {termosGarantia.filter(t => t.ativo && t.aplicaManutencoes).map(termo => (
+                        <option key={termo.id} value={termo.id}>
+                          {termo.nome} ({termo.prazoGarantia} dias)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Cliente</label>
                     <input
@@ -2263,6 +2711,8 @@ export default function Dashboard() {
         return renderClientesContent();
       case 'manutencao':
         return renderManutencaoContent();
+      case 'vendedores':
+        return renderVendedoresContent();
       case 'relatorios':
         return renderRelatoriosContent();
       case 'termos-garantia':
@@ -2366,6 +2816,7 @@ export default function Dashboard() {
                  activeModule === 'aniversarios' ? 'Aniversários de Clientes' :
                  activeModule === 'suporte' ? 'Suporte Técnico' :
                  activeModule === 'termos-garantia' ? 'Termos de Garantia' :
+                 activeModule === 'vendedores' ? 'Vendedores' :
                  activeModule}
               </h1>
             </div>
