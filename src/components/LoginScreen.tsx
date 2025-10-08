@@ -2,16 +2,19 @@
 
 import { useState } from 'react';
 import { useApp } from '@/lib/context';
-import { Eye, EyeOff, Lock, User, AlertCircle, Shield } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, AlertCircle, Shield, Mail, ArrowLeft } from 'lucide-react';
 
 export default function LoginScreen() {
-  const { login, loginAttempts } = useApp();
+  const { login, loginAttempts, dadosLoja, resetUserPassword } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [loginType, setLoginType] = useState<'normal' | 'admin'>('normal');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,23 +36,155 @@ export default function LoginScreen() {
     setIsLoading(false);
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setResetMessage('');
+    setError('');
+
+    const result = await resetUserPassword(resetEmail);
+    
+    if (result.success) {
+      setResetMessage('E-mail de recuperação enviado com sucesso! Verifique sua caixa de entrada.');
+    } else {
+      setError('Erro ao enviar e-mail de recuperação. Verifique o endereço informado.');
+    }
+    
+    setIsLoading(false);
+  };
+
   const isBlocked = loginAttempts >= 5;
+
+  if (showResetPassword) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Logo */}
+          <div className="text-center mb-8">
+            {dadosLoja?.logo ? (
+              <img 
+                src={dadosLoja.logo} 
+                alt={`${dadosLoja.nome} Logo`} 
+                className="w-24 h-24 object-contain mx-auto mb-4"
+              />
+            ) : (
+              <div className="w-24 h-24 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <img 
+                  src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/05461a6e-4fe1-4e1b-ad89-d7559c22d517.png" 
+                  alt="Gestão Phone Logo" 
+                  className="w-24 h-24 object-contain"
+                />
+              </div>
+            )}
+            <h1 className="text-2xl font-bold text-white mb-2">
+              Recuperar Senha
+            </h1>
+            <p className="text-gray-400">
+              Digite seu e-mail para receber as instruções
+            </p>
+          </div>
+
+          {/* Formulário de Recuperação */}
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <form onSubmit={handleResetPassword} className="space-y-6">
+              {/* Campo Email */}
+              <div>
+                <label htmlFor="resetEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                  E-mail
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    id="resetEmail"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                    placeholder="Digite seu e-mail"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Mensagem de Sucesso */}
+              {resetMessage && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{resetMessage}</span>
+                </div>
+              )}
+
+              {/* Mensagem de Erro */}
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+
+              {/* Botões */}
+              <div className="space-y-3">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Enviando...
+                    </div>
+                  ) : (
+                    'Enviar E-mail de Recuperação'
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetPassword(false);
+                    setResetEmail('');
+                    setResetMessage('');
+                    setError('');
+                  }}
+                  className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Voltar ao Login
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img 
-            src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/2cf7f496-b445-42ba-a46a-c1897a68cb13.jpg" 
-            alt="JV Celulares Logo" 
-            className="w-24 h-24 object-contain mx-auto mb-4"
-          />
+          {dadosLoja?.logo ? (
+            <img 
+              src={dadosLoja.logo} 
+              alt={`${dadosLoja.nome} Logo`} 
+              className="w-24 h-24 object-contain mx-auto mb-4"
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <img 
+                src="https://k6hrqrxuu8obbfwn.public.blob.vercel-storage.com/temp/05461a6e-4fe1-4e1b-ad89-d7559c22d517.png" 
+                alt="Gestão Phone Logo" 
+                className="w-24 h-24 object-contain"
+              />
+            </div>
+          )}
           <h1 className="text-2xl font-bold text-white mb-2">
             Sistema de Gestão
           </h1>
           <p className="text-gray-400">
-            JV Celulares e Acessórios
+            {dadosLoja?.nome || 'Gestão Phone'}
           </p>
         </div>
 
@@ -89,7 +224,7 @@ export default function LoginScreen() {
             {/* Campo Username */}
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                Nome de usuário
+                {loginType === 'normal' ? 'E-mail ou Nome de usuário' : 'Nome de usuário'}
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -99,7 +234,7 @@ export default function LoginScreen() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                  placeholder="Digite seu usuário"
+                  placeholder={loginType === 'normal' ? 'Digite seu e-mail ou usuário' : 'Digite seu usuário'}
                   required
                   disabled={isBlocked}
                 />
@@ -133,6 +268,19 @@ export default function LoginScreen() {
                 </button>
               </div>
             </div>
+
+            {/* Link Esqueci Senha */}
+            {loginType === 'normal' && (
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => setShowResetPassword(true)}
+                  className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+            )}
 
             {/* Mensagem de Erro */}
             {error && (
@@ -175,13 +323,18 @@ export default function LoginScreen() {
                   Acesso administrativo - Permissões elevadas
                 </p>
               )}
+              {loginType === 'normal' && (
+                <p className="mt-2 text-blue-600 text-xs">
+                  Usuários criados pelo administrador podem usar e-mail e senha do Supabase
+                </p>
+              )}
             </div>
           </div>
         </div>
 
         {/* Footer */}
         <div className="text-center mt-8 text-gray-400 text-sm">
-          <p>© 2024 JV Celulares e Acessórios</p>
+          <p>© 2024 {dadosLoja?.nome || 'Gestão Phone'}</p>
           <p>Sistema de Gestão Empresarial</p>
         </div>
       </div>
