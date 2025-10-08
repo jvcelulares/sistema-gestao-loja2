@@ -1,64 +1,40 @@
-import { Sale, Maintenance, Customer } from './types';
+import { Venda, Manutencao, Cliente, Produto } from './types';
 
-export const exportToCSV = (data: any[], filename: string, headers: string[]) => {
-  // Criar cabeçalho CSV
-  let csvContent = headers.join(',') + '\n';
-  
-  // Adicionar dados
-  data.forEach(row => {
-    const values = headers.map(header => {
-      const value = row[header] || '';
-      // Escapar aspas e adicionar aspas se necessário
-      if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-        return `"${value.replace(/"/g, '""')}"`;
-      }
-      return value;
-    });
-    csvContent += values.join(',') + '\n';
-  });
-  
-  // Criar e baixar arquivo
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-export const exportSalesToCSV = (sales: Sale[], filename: string = 'vendas.csv') => {
+export function exportSalesToCSV(vendas: Venda[], filename: string = 'vendas.csv'): void {
   const headers = [
+    'ID',
     'Data',
     'Cliente',
     'Telefone',
-    'Produtos',
-    'Quantidade Total',
-    'Valor Total',
+    'Vendedor',
     'Forma de Pagamento',
-    'Vendedor'
+    'Total',
+    'Produtos',
+    'Quantidades'
   ];
-  
-  const data = sales.map(sale => ({
-    'Data': new Date(sale.date).toLocaleDateString('pt-BR'),
-    'Cliente': sale.customerName,
-    'Telefone': sale.customerPhone || '',
-    'Produtos': sale.items.map(item => `${item.name} (${item.quantity}x)`).join('; '),
-    'Quantidade Total': sale.items.reduce((sum, item) => sum + item.quantity, 0),
-    'Valor Total': `R$ ${sale.total.toFixed(2)}`,
-    'Forma de Pagamento': sale.paymentMethod,
-    'Vendedor': sale.seller || ''
-  }));
-  
-  exportToCSV(data, filename, headers);
-};
 
-export const exportMaintenancesToCSV = (maintenances: Maintenance[], filename: string = 'manutencoes.csv') => {
+  const csvContent = [
+    headers.join(','),
+    ...vendas.map(venda => [
+      venda.id,
+      new Date(venda.createdAt).toLocaleDateString('pt-BR'),
+      `"${venda.nomeCliente}"`,
+      venda.telefoneCliente,
+      venda.vendedor,
+      venda.formaPagamento,
+      venda.total.toFixed(2),
+      `"${venda.itens.map(item => item.nomeProduto).join('; ')}"`,
+      venda.itens.map(item => item.quantidade).join('; ')
+    ].join(','))
+  ].join('\n');
+
+  downloadCSV(csvContent, filename);
+}
+
+export function exportMaintenancesToCSV(manutencoes: Manutencao[], filename: string = 'manutencoes.csv'): void {
   const headers = [
-    'Data de Entrada',
-    'Data de Entrega',
+    'ID',
+    'Data',
     'Cliente',
     'Telefone',
     'Aparelho',
@@ -68,79 +44,123 @@ export const exportMaintenancesToCSV = (maintenances: Maintenance[], filename: s
     'Serviço',
     'Status',
     'Valor',
-    'Forma de Pagamento'
+    'Custo Material',
+    'Forma de Pagamento',
+    'Data Prevista Entrega'
   ];
-  
-  const data = maintenances.map(maintenance => ({
-    'Data de Entrada': new Date(maintenance.entryDate).toLocaleDateString('pt-BR'),
-    'Data de Entrega': maintenance.deliveryDate ? new Date(maintenance.deliveryDate).toLocaleDateString('pt-BR') : '',
-    'Cliente': maintenance.customerName,
-    'Telefone': maintenance.customerPhone || '',
-    'Aparelho': maintenance.deviceName,
-    'Modelo': maintenance.deviceModel,
-    'IMEI': maintenance.imei || '',
-    'Defeito': maintenance.defect,
-    'Serviço': maintenance.service,
-    'Status': maintenance.status,
-    'Valor': `R$ ${maintenance.price.toFixed(2)}`,
-    'Forma de Pagamento': maintenance.paymentMethod || ''
-  }));
-  
-  exportToCSV(data, filename, headers);
-};
 
-export const exportCustomersToCSV = (customers: Customer[], filename: string = 'clientes.csv') => {
+  const csvContent = [
+    headers.join(','),
+    ...manutencoes.map(manutencao => [
+      manutencao.id,
+      new Date(manutencao.createdAt).toLocaleDateString('pt-BR'),
+      `"${manutencao.nomeCliente}"`,
+      manutencao.telefoneCliente,
+      `"${manutencao.nomeAparelho}"`,
+      `"${manutencao.modeloAparelho}"`,
+      manutencao.imeiAparelho || '',
+      `"${manutencao.defeitoInformado}"`,
+      `"${manutencao.descricaoServico || ''}"`,
+      manutencao.status,
+      manutencao.valorServico.toFixed(2),
+      (manutencao.custoMaterial || 0).toFixed(2),
+      manutencao.formaPagamento || '',
+      manutencao.dataPrevistaEntrega ? new Date(manutencao.dataPrevistaEntrega).toLocaleDateString('pt-BR') : ''
+    ].join(','))
+  ].join('\n');
+
+  downloadCSV(csvContent, filename);
+}
+
+export function exportCustomersToCSV(clientes: Cliente[], filename: string = 'clientes.csv'): void {
   const headers = [
+    'ID',
     'Nome',
+    'Documento',
     'Telefone',
     'Email',
     'Endereço',
-    'CPF/RG',
     'CEP',
-    'Data de Nascimento',
+    'Data Nascimento',
     'Como Conheceu',
-    'Data de Cadastro'
+    'Data Cadastro'
   ];
-  
-  const data = customers.map(customer => ({
-    'Nome': customer.name,
-    'Telefone': customer.phone,
-    'Email': customer.email || '',
-    'Endereço': customer.address || '',
-    'CPF/RG': customer.document || '',
-    'CEP': customer.cep || '',
-    'Data de Nascimento': customer.birthDate ? new Date(customer.birthDate).toLocaleDateString('pt-BR') : '',
-    'Como Conheceu': customer.howKnew || '',
-    'Data de Cadastro': new Date(customer.createdAt).toLocaleDateString('pt-BR')
-  }));
-  
-  exportToCSV(data, filename, headers);
-};
 
-export const exportProductsToCSV = (products: any[], filename: string = 'produtos.csv') => {
+  const csvContent = [
+    headers.join(','),
+    ...clientes.map(cliente => [
+      cliente.id,
+      `"${cliente.nome}"`,
+      cliente.documento,
+      cliente.telefone,
+      cliente.email || '',
+      `"${cliente.endereco || ''}"`,
+      cliente.cep || '',
+      cliente.dataNascimento || '',
+      cliente.comoConheceu || '',
+      new Date(cliente.createdAt).toLocaleDateString('pt-BR')
+    ].join(','))
+  ].join('\n');
+
+  downloadCSV(csvContent, filename);
+}
+
+export function exportProductsToCSV(produtos: Produto[], filename: string = 'produtos.csv'): void {
   const headers = [
+    'ID',
     'Nome',
-    'Tipo',
     'Marca',
+    'Tipo',
     'Modelo',
-    'Preço de Custo',
-    'Preço de Venda',
-    'Quantidade em Estoque',
+    'Memória',
+    'IMEI 1',
+    'IMEI 2',
+    'Cor',
+    'Condição',
     'Fornecedor',
+    'Preço Custo',
+    'Preço Venda',
+    'Estoque Atual',
+    'Estoque Mínimo',
     'Descrição'
   ];
+
+  const csvContent = [
+    headers.join(','),
+    ...produtos.map(produto => [
+      produto.id,
+      `"${produto.nome}"`,
+      `"${produto.marca}"`,
+      produto.tipo,
+      `"${produto.modelo || ''}"`,
+      produto.memoria || '',
+      produto.imei1 || '',
+      produto.imei2 || '',
+      produto.cor || '',
+      produto.condicao || '',
+      `"${produto.fornecedor}"`,
+      produto.precoCusto.toFixed(2),
+      produto.precoVenda.toFixed(2),
+      produto.quantidadeEstoque,
+      produto.estoqueMinimo,
+      `"${produto.descricao || ''}"`
+    ].join(','))
+  ].join('\n');
+
+  downloadCSV(csvContent, filename);
+}
+
+function downloadCSV(content: string, filename: string): void {
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
   
-  const data = products.map(product => ({
-    'Nome': product.name,
-    'Tipo': product.type,
-    'Marca': product.brand || '',
-    'Modelo': product.model || '',
-    'Preço de Custo': `R$ ${product.costPrice.toFixed(2)}`,
-    'Preço de Venda': `R$ ${product.salePrice.toFixed(2)}`,
-    'Quantidade em Estoque': product.stock,
-    'Fornecedor': product.supplier || '',
-    'Descrição': product.description || ''
-  }));
-  
-  exportToCSV(data, filename, headers);
-};
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
