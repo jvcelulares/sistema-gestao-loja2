@@ -11,13 +11,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
-    // Aguardar hidratação completa e verificar se o DOM está pronto
+    // CORREÇÃO: Aguardar hidratação completa e verificar se o DOM está pronto
     const checkReady = () => {
       if (typeof window !== 'undefined' && document.readyState === 'complete') {
         setIsClient(true);
-        setIsLoading(false);
+        // Aguardar um pouco mais para garantir que tudo está estável
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 200);
       } else {
-        setTimeout(checkReady, 50);
+        setTimeout(checkReady, 100);
       }
     };
     
@@ -44,7 +47,12 @@ function HomeContent() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    // CORREÇÃO: Aguardar um pouco mais para garantir estabilidade
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   if (!mounted) {

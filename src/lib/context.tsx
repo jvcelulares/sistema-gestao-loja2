@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User, Produto, Cliente, Venda, Manutencao, TermoGarantia, DadosLoja, Vendedor } from './types';
 import { DADOS_LOJA } from './constants';
 import { 
@@ -81,6 +81,17 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// CORREÇÃO: Dados da loja limpos para novos usuários
+const DADOS_LOJA_LIMPOS: DadosLoja = {
+  nome: '',
+  cnpj: '',
+  telefone: '',
+  email: '',
+  endereco: '',
+  redesSociais: '',
+  logo: ''
+};
 
 // Dados iniciais para demonstração (apenas para usuário principal JV Celulares)
 const produtosIniciais: Produto[] = [
@@ -289,7 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [termosGarantia, setTermosGarantia] = useState<TermoGarantia[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [usuarios, setUsuarios] = useState<User[]>([]);
-  const [dadosLoja, setDadosLoja] = useState<DadosLoja>(DADOS_LOJA);
+  const [dadosLoja, setDadosLoja] = useState<DadosLoja>(DADOS_LOJA_LIMPOS);
   const [faturamentoTotal, setFaturamentoTotal] = useState(0);
   const [lucroTotal, setLucroTotal] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -301,103 +312,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setIsHydrated(true);
     }
   }, []);
-
-  // Função para salvar dados no Supabase com proteção contra erros
-  const saveDataToSupabase = async (userId: string) => {
-    if (!isHydrated) return;
-    
-    try {
-      const storeData = {
-        produtos,
-        clientes,
-        vendas,
-        manutencoes,
-        termosGarantia,
-        vendedores,
-        usuarios,
-        dadosLoja,
-        faturamentoTotal,
-        lucroTotal
-      };
-      
-      await saveStoreData(userId, storeData);
-      console.log('✅ Dados salvos no Supabase com sucesso');
-    } catch (error) {
-      console.warn('⚠️ Erro ao salvar dados no Supabase:', error);
-    }
-  };
-
-  // Função para carregar dados do Supabase com proteção contra erros
-  const loadDataFromSupabase = async (userId: string) => {
-    if (!isHydrated) return false;
-    
-    try {
-      const { data, error } = await loadStoreData(userId);
-      
-      if (error) {
-        console.warn('⚠️ Erro ao carregar dados do Supabase:', error);
-        return false;
-      }
-
-      if (data) {
-        setProdutos(data.produtos || []);
-        setClientes(data.clientes || []);
-        setVendas(data.vendas || []);
-        setManutencoes(data.manutencoes || []);
-        setTermosGarantia(data.termosGarantia || []);
-        setVendedores(data.vendedores || []);
-        setUsuarios(data.usuarios || []);
-        setDadosLoja(data.dadosLoja || DADOS_LOJA);
-        setFaturamentoTotal(data.faturamentoTotal || 0);
-        setLucroTotal(data.lucroTotal || 0);
-        
-        console.log('✅ Dados carregados do Supabase com sucesso');
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.warn('⚠️ Erro ao carregar dados do Supabase:', error);
-      return false;
-    }
-  };
-
-  // Função para carregar usuários do Supabase (SINCRONIZAÇÃO AUTOMÁTICA)
-  const carregarUsuarios = async () => {
-    if (!user || !supabaseUser) return;
-    
-    try {
-      console.log('🔄 Carregando usuários do Supabase...');
-      
-      // Se for usuário do Supabase (admin), carregar usuários criados por ele
-      if (user.type === 'supabase') {
-        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
-        
-        if (adminUsers && Array.isArray(adminUsers)) {
-          const mappedUsers = adminUsers.map((profile: any) => ({
-            id: profile.user_id,
-            username: profile.username || profile.email,
-            email: profile.email,
-            role: profile.role || 'user',
-            type: 'supabase',
-            createdAt: profile.created_at,
-            expiresAt: profile.subscription_expires_at
-          }));
-          
-          setUsuarios(mappedUsers);
-          console.log(`✅ ${mappedUsers.length} usuários carregados do Supabase`);
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ Erro ao carregar usuários:', error);
-    }
-  };
-
-  // Função para obter chave de localStorage específica do usuário
-  const getUserStorageKey = (key: string, userId?: string) => {
-    const currentUserId = userId || user?.id || 'default';
-    return `gp-${key}-${currentUserId}`;
-  };
 
   // Função segura para acessar localStorage
   const safeLocalStorage = {
@@ -428,7 +342,144 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Inicialização do contexto com proteção robusta
+  // Função para obter chave de localStorage específica do usuário
+  const getUserStorageKey = useCallback((key: string, userId?: string) => {
+    const currentUserId = userId || user?.id || 'default';
+    return `gp-${key}-${currentUserId}`;
+  }, [user?.id]);
+
+  // CORREÇÃO: Função para salvar dados no Supabase com proteção robusta contra erros
+  const saveDataToSupabase = useCallback(async (userId: string) => {
+    if (!isHydrated || !userId) return;
+    
+    try {
+      const storeData = {
+        produtos,
+        clientes,
+        vendas,
+        manutencoes,
+        termosGarantia,
+        vendedores,
+        usuarios,
+        dadosLoja,
+        faturamentoTotal,
+        lucroTotal
+      };
+      
+      await saveStoreData(userId, storeData);
+      console.log('✅ Dados salvos no Supabase com sucesso');
+    } catch (error) {
+      console.warn('⚠️ Erro ao salvar dados no Supabase (ignorado):', error);
+      // Não propagar o erro para evitar quebrar o fluxo
+    }
+  }, [produtos, clientes, vendas, manutencoes, termosGarantia, vendedores, usuarios, dadosLoja, faturamentoTotal, lucroTotal, isHydrated]);
+
+  // CORREÇÃO: Função para carregar dados do Supabase com proteção robusta contra erros
+  const loadDataFromSupabase = useCallback(async (userId: string) => {
+    if (!isHydrated || !userId) return false;
+    
+    try {
+      const { data, error } = await loadStoreData(userId);
+      
+      if (error) {
+        console.warn('⚠️ Erro ao carregar dados do Supabase (ignorado):', error);
+        return false;
+      }
+
+      if (data) {
+        setProdutos(data.produtos || []);
+        setClientes(data.clientes || []);
+        setVendas(data.vendas || []);
+        setManutencoes(data.manutencoes || []);
+        setTermosGarantia(data.termosGarantia || []);
+        setVendedores(data.vendedores || []);
+        setUsuarios(data.usuarios || []);
+        setDadosLoja(data.dadosLoja || DADOS_LOJA_LIMPOS);
+        setFaturamentoTotal(data.faturamentoTotal || 0);
+        setLucroTotal(data.lucroTotal || 0);
+        
+        console.log('✅ Dados carregados do Supabase com sucesso');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar dados do Supabase (ignorado):', error);
+      return false;
+    }
+  }, [isHydrated]);
+
+  // CORREÇÃO: Função estável para carregar usuários sem dependência circular
+  const carregarUsuarios = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      console.log('🔄 Carregando usuários do sistema...');
+      
+      // Se for usuário do Supabase (admin), carregar usuários criados por ele
+      if (user.type === 'supabase' && supabaseUser?.id) {
+        console.log('📡 Carregando usuários do Supabase...');
+        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
+        
+        if (adminUsers && Array.isArray(adminUsers)) {
+          const mappedUsers = adminUsers.map((profile: any) => ({
+            id: profile.user_id,
+            username: profile.username || profile.email,
+            email: profile.email,
+            password: profile.password || 'senha123', // CORREÇÃO: Garantir que senha existe
+            role: profile.role || 'user',
+            type: 'supabase',
+            createdAt: profile.created_at,
+            expiresAt: profile.subscription_expires_at,
+            tempoAcesso: profile.subscription_expires_at ? 
+              Math.ceil((new Date(profile.subscription_expires_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 
+              null
+          }));
+          
+          setUsuarios(mappedUsers);
+          
+          // Salvar também no localStorage para persistência
+          if (isHydrated) {
+            try {
+              localStorage.setItem('gp-usuarios-supabase', JSON.stringify(mappedUsers));
+            } catch (e) {
+              console.warn('Erro ao salvar usuários:', e);
+            }
+          }
+          
+          console.log(`✅ ${mappedUsers.length} usuários carregados do Supabase e sincronizados`);
+        } else {
+          console.log('📝 Nenhum usuário encontrado no Supabase');
+          setUsuarios([]);
+        }
+      } else {
+        // Para admin local, carregar do localStorage
+        console.log('💾 Carregando usuários do localStorage...');
+        if (isHydrated) {
+          try {
+            const savedUsuarios = localStorage.getItem('gp-usuarios');
+            if (savedUsuarios) {
+              const parsedUsuarios = JSON.parse(savedUsuarios);
+              if (Array.isArray(parsedUsuarios)) {
+                setUsuarios(parsedUsuarios);
+                console.log(`✅ ${parsedUsuarios.length} usuários carregados do localStorage`);
+              }
+            } else {
+              setUsuarios([]);
+            }
+          } catch (e) {
+            console.warn('⚠️ Erro ao carregar usuários do localStorage:', e);
+            setUsuarios([]);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar usuários (ignorado):', error);
+      setUsuarios([]);
+    }
+  }, [user?.id, user?.type, supabaseUser?.id, isHydrated]);
+
+  // CORREÇÃO: Inicialização do contexto com proteção robusta
   useEffect(() => {
     if (!isHydrated) return;
 
@@ -451,13 +502,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
               id: supabaseUserData.id,
               username: supabaseUserData.email || '',
               email: supabaseUserData.email,
-              role: 'user',
+              role: profile.role === 'admin' ? 'admin' : 'user',
               type: 'supabase',
               createdAt: profile.created_at || new Date().toISOString(),
               expiresAt: profile.subscription_expires_at
             };
             
             setUser(userData);
+            
+            // Carregar dados da loja do perfil do usuário ou usar limpos
+            if (profile.store_name || profile.store_cnpj || profile.store_phone) {
+              setDadosLoja({
+                nome: profile.store_name || '',
+                cnpj: profile.store_cnpj || '',
+                telefone: profile.store_phone || '',
+                email: profile.store_email || supabaseUserData.email || '',
+                endereco: profile.store_address || '',
+                redesSociais: profile.store_social_media || '',
+                logo: profile.store_logo || ''
+              });
+            } else {
+              setDadosLoja(DADOS_LOJA_LIMPOS);
+            }
             
             // Carregar dados da loja do Supabase
             const dataLoaded = await loadDataFromSupabase(supabaseUserData.id);
@@ -519,7 +585,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   setDadosLoja(parsedDados);
                 }
               } catch (e) {
-                setDadosLoja(DADOS_LOJA);
+                setDadosLoja(DADOS_LOJA_LIMPOS);
               }
             }
             if (savedUser) {
@@ -544,228 +610,438 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     initializeApp();
-  }, [isHydrated]);
+  }, [isHydrated, getUserStorageKey, loadDataFromSupabase]);
 
-  // Carregar dados específicos do usuário quando user muda
+  // CORREÇÃO: Carregar dados específicos do usuário quando user muda (SEM LOOP)
   useEffect(() => {
     if (!isInitialized || !user || !isHydrated) return;
 
-    try {
-      // Se for usuário do Supabase, dados já foram carregados na inicialização
-      if (user.type === 'supabase') {
-        // Carregar usuários criados pelo admin
-        carregarUsuarios();
-        return;
-      }
-
-      // Se for o usuário principal da JV Celulares, carrega dados iniciais se não existirem
-      if (user.username === 'jvcell2023') {
-        const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
-        const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
-        const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
-        const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
-        const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
-        const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
-
-        try {
-          setProdutos(savedProdutos ? JSON.parse(savedProdutos) : produtosIniciais);
-          setClientes(savedClientes ? JSON.parse(savedClientes) : clientesIniciais);
-          setVendas(savedVendas ? JSON.parse(savedVendas) : vendasIniciais);
-          setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : manutencoesIniciais);
-          setTermosGarantia(savedTermosGarantia ? JSON.parse(savedTermosGarantia) : termosGarantiaIniciais);
-          setVendedores(savedVendedores ? JSON.parse(savedVendedores) : []);
-        } catch (parseError) {
-          // Se houver erro de parsing, usar dados iniciais
-          setProdutos(produtosIniciais);
-          setClientes(clientesIniciais);
-          setVendas(vendasIniciais);
-          setManutencoes(manutencoesIniciais);
-          setTermosGarantia(termosGarantiaIniciais);
-          setVendedores([]);
+    const loadUserData = async () => {
+      try {
+        // Se for usuário do Supabase, não carregar dados aqui para evitar loop
+        if (user.type === 'supabase') {
+          console.log('🔄 Usuário Supabase detectado - dados já carregados na inicialização');
+          return;
         }
-      } else {
-        // Para outros usuários, carrega dados específicos ou inicia vazio
-        const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
-        const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
-        const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
-        const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
-        const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
-        const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
 
-        try {
-          setProdutos(savedProdutos ? JSON.parse(savedProdutos) : []);
-          setClientes(savedClientes ? JSON.parse(savedClientes) : []);
-          setVendas(savedVendas ? JSON.parse(savedVendas) : []);
-          setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : []);
-          setTermosGarantia(savedTermosGarantia ? JSON.parse(savedTermosGarantia) : []);
-          setVendedores(savedVendedores ? JSON.parse(savedVendedores) : []);
-        } catch (parseError) {
-          // Se houver erro de parsing, iniciar com arrays vazios
-          setProdutos([]);
-          setClientes([]);
-          setVendas([]);
-          setManutencoes([]);
-          setTermosGarantia([]);
-          setVendedores([]);
+        // Se for o usuário principal da JV Celulares, carrega dados iniciais se não existirem
+        if (user.username === 'jvcell2023') {
+          const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
+          const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
+          const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
+          const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
+          const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
+          const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
+
+          try {
+            setProdutos(savedProdutos ? JSON.parse(savedProdutos) : produtosIniciais);
+            setClientes(savedClientes ? JSON.parse(savedClientes) : clientesIniciais);
+            setVendas(savedVendas ? JSON.parse(savedVendas) : vendasIniciais);
+            setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : manutencoesIniciais);
+            setTermosGarantia(savedTermosGarantia ? JSON.parse(savedTermosGarantia) : termosGarantiaIniciais);
+            setVendedores(savedVendedores ? JSON.parse(savedVendedores) : []);
+            
+            setDadosLoja(DADOS_LOJA);
+          } catch (parseError) {
+            // Se houver erro de parsing, usar dados iniciais
+            setProdutos(produtosIniciais);
+            setClientes(clientesIniciais);
+            setVendas(vendasIniciais);
+            setManutencoes(manutencoesIniciais);
+            setTermosGarantia(termosGarantiaIniciais);
+            setVendedores([]);
+            setDadosLoja(DADOS_LOJA);
+          }
+        } else {
+          // Para outros usuários, carrega dados específicos ou inicia vazio COM DADOS LIMPOS
+          const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
+          const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
+          const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
+          const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
+          const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
+          const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
+
+          try {
+            setProdutos(savedProdutos ? JSON.parse(savedProdutos) : []);
+            setClientes(savedClientes ? JSON.parse(savedClientes) : []);
+            setVendas(savedVendas ? JSON.parse(savedVendas) : []);
+            setManutencoes(savedManutencoes ? JSON.parse(savedManutencoes) : []);
+            setTermosGarantia(savedTermosGarantia ? JSON.parse(savedTermosGarantia) : []);
+            setVendedores(savedVendedores ? JSON.parse(savedVendedores) : []);
+            
+            setDadosLoja(DADOS_LOJA_LIMPOS);
+          } catch (parseError) {
+            // Se houver erro de parsing, iniciar com arrays vazios e dados limpos
+            setProdutos([]);
+            setClientes([]);
+            setVendas([]);
+            setManutencoes([]);
+            setTermosGarantia([]);
+            setVendedores([]);
+            setDadosLoja(DADOS_LOJA_LIMPOS);
+          }
         }
+      } catch (error) {
+        console.warn('Erro ao carregar dados do usuário:', error);
       }
-    } catch (error) {
-      console.warn('Erro ao carregar dados do usuário:', error);
-    }
-  }, [user, isInitialized, isHydrated]);
+    };
 
-  // Salvar dados no localStorage E no Supabase com proteção
+    loadUserData();
+  }, [user?.id, user?.type, user?.username, isInitialized, isHydrated, getUserStorageKey]);
+
+  // CORREÇÃO: Salvar dados no localStorage E no Supabase com proteção (SEM LOOP)
   useEffect(() => {
     if (!isInitialized || !isHydrated) return;
     
     try {
       if (user) {
         safeLocalStorage.setItem('gp-user', JSON.stringify(user));
-        
-        // Se for usuário do Supabase, salvar também no banco
-        if (user.type === 'supabase' && supabaseUser) {
-          saveDataToSupabase(supabaseUser.id);
-        }
       }
       safeLocalStorage.setItem('gp-login-attempts', loginAttempts.toString());
-      safeLocalStorage.setItem('gp-usuarios', JSON.stringify(usuarios));
+      
+      // CORREÇÃO: Salvar usuários com persistência garantida
+      if (usuarios.length > 0) {
+        if (user?.type === 'supabase') {
+          safeLocalStorage.setItem('gp-usuarios-supabase', JSON.stringify(usuarios));
+        } else {
+          safeLocalStorage.setItem('gp-usuarios', JSON.stringify(usuarios));
+        }
+        console.log(`💾 ${usuarios.length} usuários salvos no localStorage`);
+      }
+      
       safeLocalStorage.setItem('gp-dados-loja', JSON.stringify(dadosLoja));
       safeLocalStorage.setItem('gp-faturamento-total', faturamentoTotal.toString());
       safeLocalStorage.setItem('gp-lucro-total', lucroTotal.toString());
     } catch (error) {
       console.warn('Erro ao salvar dados globais:', error);
     }
-  }, [user, loginAttempts, usuarios, dadosLoja, faturamentoTotal, lucroTotal, isInitialized, supabaseUser, isHydrated]);
+  }, [user?.id, loginAttempts, usuarios, dadosLoja.nome, faturamentoTotal, lucroTotal, isInitialized, isHydrated]);
 
-  // Salvar dados específicos do usuário no localStorage E no Supabase com proteção
+  // CORREÇÃO: Salvar dados específicos do usuário com debounce maior para evitar requests excessivos
   useEffect(() => {
     if (!isInitialized || !user || !isHydrated) return;
-    try {
-      safeLocalStorage.setItem(getUserStorageKey('produtos'), JSON.stringify(produtos));
-      safeLocalStorage.setItem(getUserStorageKey('clientes'), JSON.stringify(clientes));
-      safeLocalStorage.setItem(getUserStorageKey('vendas'), JSON.stringify(vendas));
-      safeLocalStorage.setItem(getUserStorageKey('manutencoes'), JSON.stringify(manutencoes));
-      safeLocalStorage.setItem(getUserStorageKey('termos-garantia'), JSON.stringify(termosGarantia));
-      safeLocalStorage.setItem(getUserStorageKey('vendedores'), JSON.stringify(vendedores));
-      
-      // Se for usuário do Supabase, salvar também no banco
-      if (user.type === 'supabase' && supabaseUser) {
-        saveDataToSupabase(supabaseUser.id);
+    
+    // Debounce para evitar salvamentos excessivos
+    const timeoutId = setTimeout(() => {
+      try {
+        safeLocalStorage.setItem(getUserStorageKey('produtos'), JSON.stringify(produtos));
+        safeLocalStorage.setItem(getUserStorageKey('clientes'), JSON.stringify(clientes));
+        safeLocalStorage.setItem(getUserStorageKey('vendas'), JSON.stringify(vendas));
+        safeLocalStorage.setItem(getUserStorageKey('manutencoes'), JSON.stringify(manutencoes));
+        safeLocalStorage.setItem(getUserStorageKey('termos-garantia'), JSON.stringify(termosGarantia));
+        safeLocalStorage.setItem(getUserStorageKey('vendedores'), JSON.stringify(vendedores));
+        
+        // Se for usuário do Supabase, salvar também no banco com debounce ainda maior
+        if (user.type === 'supabase' && supabaseUser) {
+          const supabaseTimeoutId = setTimeout(() => {
+            saveDataToSupabase(supabaseUser.id).catch(error => {
+              console.warn('Erro ao salvar no Supabase (ignorado):', error);
+            });
+          }, 15000); // CORREÇÃO: Aumentar debounce para 15 segundos para evitar requests excessivos
+          
+          return () => clearTimeout(supabaseTimeoutId);
+        }
+      } catch (error) {
+        console.warn('Erro ao salvar dados do usuário:', error);
       }
-    } catch (error) {
-      console.warn('Erro ao salvar dados do usuário:', error);
-    }
-  }, [produtos, clientes, vendas, manutencoes, termosGarantia, vendedores, user, isInitialized, supabaseUser, isHydrated]);
+    }, 2000); // Debounce de 2 segundos para localStorage
+    
+    return () => clearTimeout(timeoutId);
+  }, [produtos.length, clientes.length, vendas.length, manutencoes.length, termosGarantia.length, vendedores.length, user?.id, isInitialized, isHydrated, getUserStorageKey, saveDataToSupabase, supabaseUser]);
 
   const login = async (username: string, password: string, type: 'normal' | 'admin' = 'normal'): Promise<boolean> => {
     try {
       console.log('🔄 Tentando login...', { username, type });
       
-      // Primeiro tentar login no Supabase
-      const { data: supabaseData, error } = await loginUser(username, password);
-      
-      if (supabaseData && supabaseData.user && !error) {
-        console.log('✅ Login no Supabase bem-sucedido');
-        setSupabaseUser(supabaseData.user);
+      // Para login normal, SEMPRE tentar Supabase primeiro
+      if (type === 'normal') {
+        console.log('🔄 Tentando login no Supabase para usuário normal...');
         
-        // Verificar se o usuário tem perfil
-        let profile = await getUserStoreProfile(supabaseData.user.id);
+        // Tentar login no Supabase
+        const { data: supabaseData, error } = await loginUser(username, password);
         
-        if (!profile.data) {
-          // Criar perfil se não existir
-          await createUserStoreProfile(supabaseData.user.id, {
-            email: supabaseData.user.email,
-            subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
-            is_active: true
-          });
-          profile = await getUserStoreProfile(supabaseData.user.id);
+        if (supabaseData && supabaseData.user && !error) {
+          console.log('✅ Login no Supabase bem-sucedido para usuário normal');
+          setSupabaseUser(supabaseData.user);
+          
+          // Verificar se o usuário tem perfil
+          let profile = await getUserStoreProfile(supabaseData.user.id);
+          
+          if (!profile.data) {
+            // Criar perfil com dados da loja limpos para novos usuários
+            await createUserStoreProfile(supabaseData.user.id, {
+              email: supabaseData.user.email,
+              subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
+              is_active: true,
+              store_name: '',
+              store_cnpj: '',
+              store_phone: '',
+              store_email: '',
+              store_address: '',
+              store_social_media: '',
+              store_logo: ''
+            });
+            profile = await getUserStoreProfile(supabaseData.user.id);
+          }
+          
+          // Verificar se a assinatura ainda está válida
+          if (profile.data) {
+            const now = new Date();
+            const expiresAt = new Date(profile.data.subscription_expires_at);
+            
+            if (now > expiresAt) {
+              console.error('❌ Assinatura expirada');
+              return false;
+            }
+            
+            const userData: User = {
+              id: supabaseData.user.id,
+              username: supabaseData.user.email || '',
+              email: supabaseData.user.email,
+              role: 'user',
+              type: 'supabase',
+              createdAt: profile.data.created_at || new Date().toISOString(),
+              expiresAt: profile.data.subscription_expires_at
+            };
+            
+            setUser(userData);
+            setLoginAttempts(0);
+            
+            // Definir dados da loja baseado no perfil ou limpos para novos usuários
+            if (profile.data.store_name || profile.data.store_cnpj || profile.data.store_phone) {
+              setDadosLoja({
+                nome: profile.data.store_name || '',
+                cnpj: profile.data.store_cnpj || '',
+                telefone: profile.data.store_phone || '',
+                email: profile.data.store_email || supabaseData.user.email || '',
+                endereco: profile.data.store_address || '',
+                redesSociais: profile.data.store_social_media || '',
+                logo: profile.data.store_logo || ''
+              });
+            } else {
+              setDadosLoja(DADOS_LOJA_LIMPOS);
+            }
+            
+            // Carregar dados do Supabase
+            await loadDataFromSupabase(supabaseData.user.id);
+            
+            console.log('✅ Login realizado com sucesso via Supabase (usuário normal)');
+            return true;
+          }
+        } else {
+          console.log('⚠️ Falha no login do Supabase para usuário normal:', error?.message);
         }
         
-        // Verificar se a assinatura ainda está válida
-        if (profile.data) {
-          const now = new Date();
-          const expiresAt = new Date(profile.data.subscription_expires_at);
+        // Se falhou no Supabase, tentar login local (sistema antigo) apenas para usuário específico
+        if (username === 'jvcell2023' && password === 'Jesuscristovive') {
+          console.log('✅ Login local bem-sucedido (jvcell2023)');
+          const userData: User = {
+            id: '1',
+            username: 'jvcell2023',
+            role: 'admin',
+            type: 'normal',
+            createdAt: new Date().toISOString()
+          };
+          setUser(userData);
+          setLoginAttempts(0);
+          return true;
+        }
+        
+        // CORREÇÃO: Verificar usuários criados pelo admin (sistema local) - BUSCA MELHORADA
+        console.log('🔍 Verificando usuários criados pelo admin...');
+        
+        // CORREÇÃO: Carregar usuários de AMBAS as fontes e garantir persistência
+        let todosUsuarios: User[] = [];
+        
+        // Primeiro, tentar carregar do estado atual (mais confiável)
+        if (usuarios.length > 0) {
+          todosUsuarios = [...usuarios];
+          console.log(`📋 ${usuarios.length} usuários carregados do estado atual`);
+        } else {
+          // Se não há usuários no estado, carregar do localStorage
+          const usuariosLocais = safeLocalStorage.getItem('gp-usuarios');
+          const usuariosSupabaseStorage = safeLocalStorage.getItem('gp-usuarios-supabase');
           
-          if (now > expiresAt) {
-            console.error('Assinatura expirada');
+          if (usuariosLocais) {
+            try {
+              const parsedLocais = JSON.parse(usuariosLocais);
+              if (Array.isArray(parsedLocais)) {
+                todosUsuarios = [...todosUsuarios, ...parsedLocais];
+                console.log(`📋 ${parsedLocais.length} usuários locais carregados do localStorage`);
+              }
+            } catch (e) {
+              console.warn('Erro ao parsear usuários locais:', e);
+            }
+          }
+          
+          if (usuariosSupabaseStorage) {
+            try {
+              const parsedSupabase = JSON.parse(usuariosSupabaseStorage);
+              if (Array.isArray(parsedSupabase)) {
+                todosUsuarios = [...todosUsuarios, ...parsedSupabase];
+                console.log(`📋 ${parsedSupabase.length} usuários Supabase carregados do localStorage`);
+              }
+            } catch (e) {
+              console.warn('Erro ao parsear usuários Supabase:', e);
+            }
+          }
+          
+          // Atualizar o estado com os usuários carregados
+          if (todosUsuarios.length > 0) {
+            setUsuarios(todosUsuarios);
+          }
+        }
+        
+        console.log(`🔍 Total de usuários para verificação: ${todosUsuarios.length}`);
+        
+        // CORREÇÃO: Busca mais flexível e robusta
+        const usuarioEncontrado = todosUsuarios.find(u => {
+          // Verificar se tem senha definida
+          if (!u.password) {
+            console.log(`⚠️ Usuário ${u.username} sem senha definida`);
             return false;
           }
           
-          const userData: User = {
-            id: supabaseData.user.id,
-            username: supabaseData.user.email || '',
-            email: supabaseData.user.email,
-            role: 'user',
-            type: 'supabase',
-            createdAt: profile.data.created_at || new Date().toISOString(),
-            expiresAt: profile.data.subscription_expires_at
-          };
+          const matchUsername = u.username === username;
+          const matchEmail = u.email === username;
+          const matchPassword = u.password === password;
           
-          setUser(userData);
-          setLoginAttempts(0);
+          console.log(`🔍 Verificando usuário ${u.username}:`, {
+            matchUsername,
+            matchEmail,
+            matchPassword,
+            userPassword: u.password ? '***' : 'VAZIO'
+          });
           
-          // Carregar dados do Supabase
-          await loadDataFromSupabase(supabaseData.user.id);
-          
-          // Carregar usuários criados pelo admin
-          await carregarUsuarios();
-          
-          console.log('✅ Login realizado com sucesso via Supabase');
-          return true;
-        }
-      }
-      
-      // Se falhou no Supabase, tentar login local (sistema antigo)
-      if (type === 'normal' && username === 'jvcell2023' && password === 'Jesuscristovive') {
-        const userData: User = {
-          id: '1',
-          username: 'jvcell2023',
-          role: 'admin',
-          type: 'normal',
-          createdAt: new Date().toISOString()
-        };
-        setUser(userData);
-        setLoginAttempts(0);
-        return true;
-      }
-      
-      if (type === 'admin' && username === 'JOAOADM' && password === 'JESUSADM') {
-        const userData: User = {
-          id: 'admin',
-          username: 'JOAOADM',
-          role: 'super_admin',
-          type: 'admin',
-          createdAt: new Date().toISOString()
-        };
-        setUser(userData);
-        setLoginAttempts(0);
+          return (matchUsername || matchEmail) && matchPassword;
+        });
         
-        // Carregar usuários do localStorage para admin local
-        const savedUsuarios = safeLocalStorage.getItem('gp-usuarios');
-        if (savedUsuarios) {
-          try {
-            const parsedUsuarios = JSON.parse(savedUsuarios);
-            if (Array.isArray(parsedUsuarios)) {
-              setUsuarios(parsedUsuarios);
+        if (usuarioEncontrado) {
+          console.log('✅ Usuário encontrado no sistema local:', usuarioEncontrado.username);
+          
+          // Verificar se o usuário ainda está dentro do prazo de acesso
+          if (usuarioEncontrado.expiresAt) {
+            const agora = new Date();
+            const expiracao = new Date(usuarioEncontrado.expiresAt);
+            
+            if (agora <= expiracao) {
+              setUser(usuarioEncontrado);
+              setLoginAttempts(0);
+              setDadosLoja(DADOS_LOJA_LIMPOS);
+              console.log('✅ Login realizado com sucesso via sistema local');
+              return true;
+            } else {
+              console.log('❌ Usuário local com assinatura expirada');
             }
-          } catch (e) {
-            setUsuarios([]);
+          } else {
+            // Se não tem data de expiração, permitir login
+            setUser(usuarioEncontrado);
+            setLoginAttempts(0);
+            setDadosLoja(DADOS_LOJA_LIMPOS);
+            console.log('✅ Login realizado com sucesso via sistema local (sem expiração)');
+            return true;
+          }
+        } else {
+          console.log('❌ Usuário não encontrado no sistema local');
+          console.log('📋 Lista completa de usuários disponíveis:');
+          todosUsuarios.forEach((u, index) => {
+            console.log(`  ${index + 1}. ${u.username} (senha: ${u.password ? '***' : 'VAZIO'})`);
+          });
+        }
+        
+        console.log('❌ Credenciais inválidas para login normal');
+        setLoginAttempts(prev => prev + 1);
+        return false;
+      }
+      
+      // Para login admin, manter lógica original
+      if (type === 'admin') {
+        // Primeiro tentar login no Supabase para admin
+        const { data: supabaseData, error } = await loginUser(username, password);
+        
+        if (supabaseData && supabaseData.user && !error) {
+          console.log('✅ Login admin no Supabase bem-sucedido');
+          setSupabaseUser(supabaseData.user);
+          
+          // Verificar se o usuário tem perfil
+          let profile = await getUserStoreProfile(supabaseData.user.id);
+          
+          if (!profile.data) {
+            // Criar perfil com dados da loja limpos para novos admins
+            await createUserStoreProfile(supabaseData.user.id, {
+              email: supabaseData.user.email,
+              subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
+              is_active: true,
+              role: 'admin',
+              store_name: '',
+              store_cnpj: '',
+              store_phone: '',
+              store_email: '',
+              store_address: '',
+              store_social_media: '',
+              store_logo: ''
+            });
+            profile = await getUserStoreProfile(supabaseData.user.id);
+          }
+          
+          // Verificar se a assinatura ainda está válida
+          if (profile.data) {
+            const now = new Date();
+            const expiresAt = new Date(profile.data.subscription_expires_at);
+            
+            if (now > expiresAt) {
+              console.error('Assinatura expirada');
+              return false;
+            }
+            
+            const userData: User = {
+              id: supabaseData.user.id,
+              username: supabaseData.user.email || '',
+              email: supabaseData.user.email,
+              role: 'admin',
+              type: 'supabase',
+              createdAt: profile.data.created_at || new Date().toISOString(),
+              expiresAt: profile.data.subscription_expires_at
+            };
+            
+            setUser(userData);
+            setLoginAttempts(0);
+            
+            // Definir dados da loja baseado no perfil ou limpos para novos admins
+            if (profile.data.store_name || profile.data.store_cnpj || profile.data.store_phone) {
+              setDadosLoja({
+                nome: profile.data.store_name || '',
+                cnpj: profile.data.store_cnpj || '',
+                telefone: profile.data.store_phone || '',
+                email: profile.data.store_email || supabaseData.user.email || '',
+                endereco: profile.data.store_address || '',
+                redesSociais: profile.data.store_social_media || '',
+                logo: profile.data.store_logo || ''
+              });
+            } else {
+              setDadosLoja(DADOS_LOJA_LIMPOS);
+            }
+            
+            // Carregar dados do Supabase
+            await loadDataFromSupabase(supabaseData.user.id);
+            
+            console.log('✅ Login admin realizado com sucesso via Supabase');
+            return true;
           }
         }
         
-        return true;
-      }
-
-      // Verificar usuários criados pelo admin (sistema local)
-      const usuarioEncontrado = usuarios.find(u => u.username === username && u.password === password);
-      if (usuarioEncontrado && type === 'normal') {
-        // Verificar se o usuário ainda está dentro do prazo de acesso
-        const agora = new Date();
-        const expiracao = new Date(usuarioEncontrado.expiresAt!);
-        
-        if (agora <= expiracao) {
-          setUser(usuarioEncontrado);
+        // Se falhou no Supabase, tentar login admin local
+        if (username === 'JOAOADM' && password === 'JESUSADM') {
+          const userData: User = {
+            id: 'admin',
+            username: 'JOAOADM',
+            role: 'super_admin',
+            type: 'admin',
+            createdAt: new Date().toISOString()
+          };
+          setUser(userData);
           setLoginAttempts(0);
+          
           return true;
         }
       }
@@ -774,7 +1050,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLoginAttempts(prev => prev + 1);
       return false;
     } catch (error) {
-      console.warn('Erro no login:', error);
+      console.warn('❌ Erro no login:', error);
       setLoginAttempts(prev => prev + 1);
       return false;
     }
@@ -796,7 +1072,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTermosGarantia([]);
       setVendedores([]);
       setUsuarios([]);
-      setDadosLoja(DADOS_LOJA);
+      setDadosLoja(DADOS_LOJA_LIMPOS);
       setFaturamentoTotal(0);
       setLucroTotal(0);
       
@@ -961,10 +1237,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setVendedores(prev => prev.filter(vendedor => vendedor.id !== id));
   };
 
-  // Funções para usuários (apenas admin) - SINCRONIZAÇÃO AUTOMÁTICA COM SUPABASE
+  // CORREÇÃO: Funções para usuários com persistência garantida
   const criarUsuario = async (dadosUsuario: Omit<User, 'id' | 'createdAt'>) => {
     try {
-      console.log('🔄 Iniciando criação de usuário com sincronização automática...');
+      console.log('🔄 Iniciando criação de usuário com persistência garantida...');
       
       // Se for usuário do Supabase (admin logado via Supabase), criar no Supabase
       if (user?.type === 'supabase' && supabaseUser) {
@@ -980,39 +1256,76 @@ export function AppProvider({ children }: { children: ReactNode }) {
         
         if (error) {
           console.error('❌ Erro ao criar usuário no Supabase:', error);
-          return;
+          throw error;
         }
+        
+        // Recarregar usuários para garantir sincronização
+        await carregarUsuarios();
         
         console.log('✅ Usuário criado e sincronizado com Supabase com sucesso!');
         console.log('✅ O usuário pode agora fazer login no sistema normal');
         
-        // Recarregar lista de usuários do Supabase
-        await carregarUsuarios();
       } else {
-        // Criar usuário local E sincronizar com Supabase
-        console.log('🔄 Criando usuário local e sincronizando com Supabase...');
+        // CORREÇÃO: Criar usuário local com persistência GARANTIDA
+        console.log('🔄 Criando usuário local com persistência garantida...');
         
         const novoUsuario: User = {
           ...dadosUsuario,
           id: Date.now().toString(),
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          // CORREÇÃO: Garantir que senha seja salva
+          password: dadosUsuario.password || 'senha123'
         };
         
-        // Adicionar ao estado local
-        setUsuarios(prev => [...prev, novoUsuario]);
+        console.log('💾 Dados do novo usuário:', {
+          username: novoUsuario.username,
+          email: novoUsuario.email,
+          hasPassword: !!novoUsuario.password,
+          password: novoUsuario.password ? '***' : 'VAZIO'
+        });
         
-        // Tentar sincronizar com Supabase
-        const syncResult = await syncUserWithSupabase(novoUsuario);
+        // CORREÇÃO: Atualizar estado E localStorage IMEDIATAMENTE
+        const novosUsuarios = [...usuarios, novoUsuario];
+        setUsuarios(novosUsuarios);
         
-        if (syncResult) {
-          console.log('✅ Usuário criado localmente e sincronizado com Supabase!');
-          console.log('✅ O usuário pode agora fazer login no sistema normal');
-        } else {
-          console.log('⚠️ Usuário criado localmente, mas não foi possível sincronizar com Supabase');
+        // CORREÇÃO: Salvar IMEDIATAMENTE no localStorage com verificação
+        try {
+          const usuariosParaSalvar = JSON.stringify(novosUsuarios);
+          safeLocalStorage.setItem('gp-usuarios', usuariosParaSalvar);
+          
+          // Verificar se foi salvo corretamente
+          const verificacao = safeLocalStorage.getItem('gp-usuarios');
+          if (verificacao) {
+            const usuariosVerificados = JSON.parse(verificacao);
+            console.log('✅ Verificação: usuários salvos no localStorage:', usuariosVerificados.length);
+            console.log('✅ Último usuário salvo:', {
+              username: usuariosVerificados[usuariosVerificados.length - 1]?.username,
+              hasPassword: !!usuariosVerificados[usuariosVerificados.length - 1]?.password
+            });
+          } else {
+            console.error('❌ Falha na verificação: usuários não foram salvos');
+          }
+        } catch (error) {
+          console.error('❌ Erro crítico ao salvar usuário no localStorage:', error);
+          throw error;
         }
+        
+        // Tentar sincronizar com Supabase em background (opcional)
+        try {
+          const syncResult = await syncUserWithSupabase(novoUsuario);
+          if (syncResult) {
+            console.log('✅ Usuário também sincronizado com Supabase!');
+          }
+        } catch (syncError) {
+          console.log('⚠️ Usuário criado localmente, mas não foi possível sincronizar com Supabase:', syncError);
+        }
+        
+        console.log('✅ Usuário criado com sucesso e salvo localmente!');
+        console.log('✅ O usuário pode agora fazer login no sistema normal');
       }
     } catch (error) {
-      console.warn('❌ Erro ao criar usuário:', error);
+      console.error('❌ Erro ao criar usuário:', error);
+      throw error;
     }
   };
 
@@ -1031,7 +1344,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await carregarUsuarios();
       } else {
         // Remover usuário local
-        setUsuarios(prev => prev.filter(usuario => usuario.id !== id));
+        const novosUsuarios = usuarios.filter(usuario => usuario.id !== id);
+        setUsuarios(novosUsuarios);
+        
+        // Salvar no localStorage imediatamente
+        safeLocalStorage.setItem('gp-usuarios', JSON.stringify(novosUsuarios));
+        console.log(`✅ Usuário removido. Total restante: ${novosUsuarios.length}`);
       }
     } catch (error) {
       console.warn('Erro ao remover usuário:', error);
@@ -1050,6 +1368,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         store_cnpj: novosDados.cnpj,
         store_address: novosDados.endereco,
         store_phone: novosDados.telefone,
+        store_email: novosDados.email,
         store_social_media: novosDados.redesSociais,
         store_logo: novosDados.logo
       });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/lib/context';
 import { 
   Users, 
@@ -29,9 +29,15 @@ export default function AdminPanel() {
   const [createMessage, setCreateMessage] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-  // Carregar usuários automaticamente quando o painel for aberto
+  // CORREÇÃO: useEffect simplificado para evitar loops infinitos
   useEffect(() => {
+    if (!user?.id) return;
+    
+    let isMounted = true;
+    
     const loadUsers = async () => {
+      if (!isMounted) return;
+      
       setIsLoadingUsers(true);
       try {
         await carregarUsuarios();
@@ -39,13 +45,18 @@ export default function AdminPanel() {
       } catch (error) {
         console.warn('⚠️ Erro ao carregar usuários:', error);
       } finally {
-        setIsLoadingUsers(false);
+        if (isMounted) {
+          setIsLoadingUsers(false);
+        }
       }
     };
-
-    // Carregar usuários quando o componente montar
+    
     loadUsers();
-  }, [carregarUsuarios]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, carregarUsuarios]); // CORREÇÃO: Dependências estáveis
 
   const resetForm = () => {
     setFormData({});
@@ -53,17 +64,17 @@ export default function AdminPanel() {
     setCreateMessage('');
   };
 
-  const handleRefreshUsers = async () => {
+  // CORREÇÃO: Função estável para recarregar usuários
+  const handleRefreshUsers = useCallback(async () => {
     setIsLoadingUsers(true);
     try {
       await carregarUsuarios();
-      console.log('✅ Lista de usuários atualizada');
     } catch (error) {
-      console.warn('⚠️ Erro ao atualizar usuários:', error);
+      console.warn('⚠️ Erro ao recarregar usuários:', error);
     } finally {
       setIsLoadingUsers(false);
     }
-  };
+  }, [carregarUsuarios]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,8 +94,7 @@ export default function AdminPanel() {
         role: formData.tipoUsuario === 'admin' ? 'admin' as const : 'user' as const,
         type: 'normal' as const,
         tempoAcesso: diasAcesso,
-        expiresAt: dataExpiracao.toISOString(),
-        dadosLoja: undefined // Usuários novos não terão dados da loja principal
+        expiresAt: dataExpiracao.toISOString()
       };
       
       await criarUsuario(novoUsuario);
@@ -98,7 +108,7 @@ export default function AdminPanel() {
       
       // Recarregar lista de usuários após criação
       setTimeout(async () => {
-        await carregarUsuarios();
+        await handleRefreshUsers();
         resetForm();
       }, 2000);
       
