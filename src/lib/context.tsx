@@ -69,6 +69,7 @@ interface AppContextType {
   usuarios: User[];
   criarUsuario: (usuario: Omit<User, 'id' | 'createdAt'>) => Promise<void>;
   removerUsuario: (id: string) => void;
+  carregarUsuarios: () => Promise<void>;
 
   // Dados da Loja (configuráveis)
   dadosLoja: DadosLoja;
@@ -361,6 +362,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Função para carregar usuários do Supabase (SINCRONIZAÇÃO AUTOMÁTICA)
+  const carregarUsuarios = async () => {
+    if (!user || !supabaseUser) return;
+    
+    try {
+      console.log('🔄 Carregando usuários do Supabase...');
+      
+      // Se for usuário do Supabase (admin), carregar usuários criados por ele
+      if (user.type === 'supabase') {
+        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
+        
+        if (adminUsers && Array.isArray(adminUsers)) {
+          const mappedUsers = adminUsers.map((profile: any) => ({
+            id: profile.user_id,
+            username: profile.username || profile.email,
+            email: profile.email,
+            role: profile.role || 'user',
+            type: 'supabase',
+            createdAt: profile.created_at,
+            expiresAt: profile.subscription_expires_at
+          }));
+          
+          setUsuarios(mappedUsers);
+          console.log(`✅ ${mappedUsers.length} usuários carregados do Supabase`);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar usuários:', error);
+    }
+  };
+
   // Função para obter chave de localStorage específica do usuário
   const getUserStorageKey = (key: string, userId?: string) => {
     const currentUserId = userId || user?.id || 'default';
@@ -520,7 +552,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     try {
       // Se for usuário do Supabase, dados já foram carregados na inicialização
-      if (user.type === 'supabase') return;
+      if (user.type === 'supabase') {
+        // Carregar usuários criados pelo admin
+        carregarUsuarios();
+        return;
+      }
 
       // Se for o usuário principal da JV Celulares, carrega dados iniciais se não existirem
       if (user.username === 'jvcell2023') {
@@ -623,10 +659,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string, type: 'normal' | 'admin' = 'normal'): Promise<boolean> => {
     try {
+      console.log('🔄 Tentando login...', { username, type });
+      
       // Primeiro tentar login no Supabase
       const { data: supabaseData, error } = await loginUser(username, password);
       
       if (supabaseData && supabaseData.user && !error) {
+        console.log('✅ Login no Supabase bem-sucedido');
         setSupabaseUser(supabaseData.user);
         
         // Verificar se o usuário tem perfil
@@ -668,6 +707,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // Carregar dados do Supabase
           await loadDataFromSupabase(supabaseData.user.id);
           
+          // Carregar usuários criados pelo admin
+          await carregarUsuarios();
+          
           console.log('✅ Login realizado com sucesso via Supabase');
           return true;
         }
@@ -697,6 +739,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
         setUser(userData);
         setLoginAttempts(0);
+        
+        // Carregar usuários do localStorage para admin local
+        const savedUsuarios = safeLocalStorage.getItem('gp-usuarios');
+        if (savedUsuarios) {
+          try {
+            const parsedUsuarios = JSON.parse(savedUsuarios);
+            if (Array.isArray(parsedUsuarios)) {
+              setUsuarios(parsedUsuarios);
+            }
+          } catch (e) {
+            setUsuarios([]);
+          }
+        }
+        
         return true;
       }
 
@@ -714,6 +770,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
       
+      console.log('❌ Credenciais inválidas');
       setLoginAttempts(prev => prev + 1);
       return false;
     } catch (error) {
@@ -929,20 +986,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.log('✅ Usuário criado e sincronizado com Supabase com sucesso!');
         console.log('✅ O usuário pode agora fazer login no sistema normal');
         
-        // Recarregar lista de usuários
-        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
-        if (adminUsers) {
-          const mappedUsers = adminUsers.map((profile: any) => ({
-            id: profile.user_id,
-            username: profile.username || profile.email,
-            email: profile.email,
-            role: profile.role || 'user',
-            type: 'supabase',
-            createdAt: profile.created_at,
-            expiresAt: profile.subscription_expires_at
-          }));
-          setUsuarios(mappedUsers);
-        }
+        // Recarregar lista de usuários do Supabase
+        await carregarUsuarios();
       } else {
         // Criar usuário local E sincronizar com Supabase
         console.log('🔄 Criando usuário local e sincronizando com Supabase...');
@@ -983,19 +1028,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         
         // Recarregar lista de usuários
-        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
-        if (adminUsers) {
-          const mappedUsers = adminUsers.map((profile: any) => ({
-            id: profile.user_id,
-            username: profile.username || profile.email,
-            email: profile.email,
-            role: profile.role || 'user',
-            type: 'supabase',
-            createdAt: profile.created_at,
-            expiresAt: profile.subscription_expires_at
-          }));
-          setUsuarios(mappedUsers);
-        }
+        await carregarUsuarios();
       } else {
         // Remover usuário local
         setUsuarios(prev => prev.filter(usuario => usuario.id !== id));
@@ -1072,6 +1105,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     usuarios,
     criarUsuario,
     removerUsuario,
+    carregarUsuarios,
 
     // Dados da Loja
     dadosLoja,

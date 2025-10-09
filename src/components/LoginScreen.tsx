@@ -27,10 +27,17 @@ export default function LoginScreen() {
       return;
     }
 
+    console.log('🔄 Tentando login...', { username, loginType });
     const success = await login(username, password, loginType);
     
     if (!success) {
-      setError(`Credenciais inválidas. Tentativas restantes: ${5 - loginAttempts - 1}`);
+      if (loginType === 'normal') {
+        setError(`Credenciais inválidas. Verifique se você está usando o e-mail e senha corretos criados pelo administrador. Tentativas restantes: ${5 - loginAttempts - 1}`);
+      } else {
+        setError(`Credenciais inválidas. Tentativas restantes: ${5 - loginAttempts - 1}`);
+      }
+    } else {
+      console.log('✅ Login realizado com sucesso');
     }
     
     setIsLoading(false);
@@ -324,9 +331,16 @@ export default function LoginScreen() {
                 </p>
               )}
               {loginType === 'normal' && (
-                <p className="mt-2 text-blue-600 text-xs">
-                  Usuários criados pelo administrador podem usar e-mail e senha do Supabase
-                </p>
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-blue-800 text-xs font-medium mb-1">
+                    🔄 Sincronização Automática com Supabase
+                  </p>
+                  <p className="text-blue-700 text-xs">
+                    • Usuários criados pelo administrador podem fazer login aqui<br/>
+                    • Use o e-mail e senha fornecidos pelo administrador<br/>
+                    • Dados são salvos automaticamente no Supabase
+                  </p>
+                </div>
               )}
             </div>
           </div>

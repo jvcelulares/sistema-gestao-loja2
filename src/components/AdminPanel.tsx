@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '@/lib/context';
 import { 
   Users, 
@@ -15,22 +15,54 @@ import {
   LogOut,
   Shield,
   Mail,
-  Key
+  Key,
+  RefreshCw
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { User } from '@/lib/types';
 
 export default function AdminPanel() {
-  const { user, logout, usuarios, criarUsuario, removerUsuario } = useApp();
+  const { user, logout, usuarios, criarUsuario, removerUsuario, carregarUsuarios } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [isCreating, setIsCreating] = useState(false);
   const [createMessage, setCreateMessage] = useState('');
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  // Carregar usuários automaticamente quando o painel for aberto
+  useEffect(() => {
+    const loadUsers = async () => {
+      setIsLoadingUsers(true);
+      try {
+        await carregarUsuarios();
+        console.log('✅ Usuários carregados no painel administrativo');
+      } catch (error) {
+        console.warn('⚠️ Erro ao carregar usuários:', error);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+
+    // Carregar usuários quando o componente montar
+    loadUsers();
+  }, [carregarUsuarios]);
 
   const resetForm = () => {
     setFormData({});
     setShowForm(false);
     setCreateMessage('');
+  };
+
+  const handleRefreshUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      await carregarUsuarios();
+      console.log('✅ Lista de usuários atualizada');
+    } catch (error) {
+      console.warn('⚠️ Erro ao atualizar usuários:', error);
+    } finally {
+      setIsLoadingUsers(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,6 +78,7 @@ export default function AdminPanel() {
       
       const novoUsuario = {
         username: formData.username,
+        email: formData.username.includes('@') ? formData.username : undefined,
         password: formData.password,
         role: formData.tipoUsuario === 'admin' ? 'admin' as const : 'user' as const,
         type: 'normal' as const,
@@ -58,19 +91,20 @@ export default function AdminPanel() {
       
       // Verificar se é um e-mail (indicando criação no Supabase)
       if (formData.username.includes('@')) {
-        setCreateMessage('Usuário criado com sucesso no Supabase! O usuário pode fazer login com essas credenciais.');
+        setCreateMessage('✅ Usuário criado com sucesso no Supabase! O usuário pode fazer login com essas credenciais no sistema normal.');
       } else {
-        setCreateMessage('Usuário criado com sucesso localmente!');
+        setCreateMessage('✅ Usuário criado com sucesso localmente!');
       }
       
-      // Limpar formulário após 3 segundos
-      setTimeout(() => {
+      // Recarregar lista de usuários após criação
+      setTimeout(async () => {
+        await carregarUsuarios();
         resetForm();
-      }, 3000);
+      }, 2000);
       
     } catch (error) {
       console.error('Erro ao criar usuário:', error);
-      setCreateMessage('Erro ao criar usuário. Tente novamente.');
+      setCreateMessage('❌ Erro ao criar usuário. Tente novamente.');
     } finally {
       setIsCreating(false);
     }
@@ -176,10 +210,11 @@ export default function AdminPanel() {
                 <Shield className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-blue-900 mb-2">Integração com Supabase Auth</h3>
+                <h3 className="text-lg font-semibold text-blue-900 mb-2">🔄 Sincronização Automática com Supabase</h3>
                 <div className="text-sm text-blue-800 space-y-2">
                   <p><strong>✅ Usuários com E-mail:</strong> Criados automaticamente no Supabase Auth para login seguro</p>
-                  <p><strong>🔐 Autenticação:</strong> Usuários podem fazer login com e-mail e senha do Supabase</p>
+                  <p><strong>🔐 Login Normal:</strong> Usuários podem fazer login no sistema normal com as credenciais criadas aqui</p>
+                  <p><strong>💾 Persistência:</strong> Dados salvos no Supabase - nunca se perdem após logout/login</p>
                   <p><strong>🏪 Dados Independentes:</strong> Cada usuário tem seu próprio perfil de loja isolado</p>
                   <p><strong>📱 Recuperação de Senha:</strong> Disponível para usuários com e-mail cadastrado</p>
                 </div>
@@ -195,13 +230,24 @@ export default function AdminPanel() {
                   <h2 className="text-lg font-semibold text-gray-900">Gerenciamento de Usuários</h2>
                   <p className="text-gray-600">Crie e gerencie contas de usuários do sistema</p>
                 </div>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                >
-                  <Plus className="w-5 h-5" />
-                  Novo Usuário
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleRefreshUsers}
+                    disabled={isLoadingUsers}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+                    title="Atualizar lista de usuários"
+                  >
+                    <RefreshCw className={`w-5 h-5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                    {isLoadingUsers ? 'Carregando...' : 'Atualizar'}
+                  </button>
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Novo Usuário
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -222,7 +268,7 @@ export default function AdminPanel() {
                   {usuarios.map(usuario => {
                     const diasRestantes = usuario.expiresAt ? calcularDiasRestantes(usuario.expiresAt) : null;
                     const isExpired = diasRestantes !== null && diasRestantes <= 0;
-                    const isSupabaseUser = usuario.username.includes('@');
+                    const isSupabaseUser = usuario.username.includes('@') || usuario.type === 'supabase';
                     
                     return (
                       <tr key={usuario.id} className="hover:bg-gray-50">
@@ -288,10 +334,21 @@ export default function AdminPanel() {
                     );
                   })}
                   
-                  {usuarios.length === 0 && (
+                  {usuarios.length === 0 && !isLoadingUsers && (
                     <tr>
                       <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                         Nenhum usuário criado ainda
+                      </td>
+                    </tr>
+                  )}
+
+                  {isLoadingUsers && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                          Carregando usuários...
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -392,10 +449,11 @@ export default function AdminPanel() {
                     <div className="flex items-start gap-2">
                       <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                       <div className="text-sm text-blue-800">
-                        <p className="font-medium">Integração Supabase:</p>
+                        <p className="font-medium">🔄 Sincronização Automática:</p>
                         <p>• E-mail: Criado no Supabase Auth + perfil de loja independente</p>
                         <p>• Nome: Criado apenas localmente</p>
-                        <p>• Cada usuário terá dados completamente isolados</p>
+                        <p>• Usuário poderá fazer login no sistema normal imediatamente</p>
+                        <p>• Dados nunca se perdem - salvos no Supabase</p>
                       </div>
                     </div>
                   </div>
@@ -403,7 +461,7 @@ export default function AdminPanel() {
                   {/* Mensagem de Sucesso/Erro */}
                   {createMessage && (
                     <div className={`flex items-center gap-2 p-3 rounded-lg ${
-                      createMessage.includes('sucesso') 
+                      createMessage.includes('✅') 
                         ? 'bg-green-50 border border-green-200 text-green-700'
                         : 'bg-red-50 border border-red-200 text-red-700'
                     }`}>
