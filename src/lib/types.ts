@@ -26,13 +26,15 @@ export interface Produto {
   nome: string;
   marca: string;
   tipo: 'celular' | 'acessorio';
+  // Campos específicos para celulares
   modelo?: string;
-  memoria?: string;
   imei1?: string;
   imei2?: string;
-  cor?: string;
-  condicao?: 'novo' | 'seminovo';
   numeroSerie?: string;
+  cor?: string;
+  memoria?: string; // Gigas de memória
+  // Campos gerais
+  condicao?: 'novo' | 'seminovo';
   dataCompra?: string;
   garantia?: string;
   fornecedor: string;
@@ -94,6 +96,7 @@ export interface Manutencao {
   nomeCliente: string;
   telefoneCliente: string;
   clienteId?: string;
+  vendedorId?: string; // Atendente (vendedor responsável)
   nomeAparelho: string;
   modeloAparelho: string;
   imeiAparelho?: string;
@@ -134,6 +137,7 @@ export interface DadosLoja {
   telefone: string;
   email: string;
   endereco: string;
+  redesSociais?: string;
   logo?: string;
 }
 
@@ -204,4 +208,24 @@ export interface Customer {
   birthDate?: string;
   howKnew?: string;
   createdAt: string;
+}
+
+// Interface para métricas de faturamento separadas
+export interface MetricasFinanceiras {
+  vendas: {
+    faturamentoHoje: number;
+    faturamentoSemana: number;
+    faturamentoMes: number;
+    lucroHoje: number;
+    lucroSemana: number;
+    lucroMes: number;
+  };
+  manutencoes: {
+    faturamentoHoje: number;
+    faturamentoSemana: number;
+    faturamentoMes: number;
+    lucroHoje: number;
+    lucroSemana: number;
+    lucroMes: number;
+  };
 }

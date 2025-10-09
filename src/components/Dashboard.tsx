@@ -74,7 +74,8 @@ export default function Dashboard() {
     removerTermoGarantia,
     atualizarVendedor,
     removerVendedor,
-    atualizarDadosLoja
+    atualizarDadosLoja,
+    atualizarCliente
   } = useApp();
   
   const [activeModule, setActiveModule] = useState<ActiveModule>('dashboard');
@@ -85,11 +86,12 @@ export default function Dashboard() {
   const [editandoDadosLoja, setEditandoDadosLoja] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState('todos');
   const [selectedDate, setSelectedDate] = useState('');
+  const [tipoEstoqueFilter, setTipoEstoqueFilter] = useState('todos'); // Filtro para tipo de produto
 
   // Estados para formulários
   const [formData, setFormData] = useState<any>({});
 
-  // Cálculos do dashboard com lucros
+  // Cálculos do dashboard com métricas separadas para vendas e manutenções
   const dashboardData = useMemo(() => {
     const hoje = new Date();
     const inicioSemana = new Date(hoje);
@@ -112,6 +114,22 @@ export default function Dashboard() {
       return dataVenda >= inicioMes;
     });
 
+    // Filtrar manutenções entregues por data
+    const manutencoesEntreguesHoje = manutencoes.filter(manutencao => {
+      const dataEntrega = manutencao.dataEntrega ? new Date(manutencao.dataEntrega) : null;
+      return manutencao.status === 'entregue' && dataEntrega && dataEntrega.toDateString() === hoje.toDateString();
+    });
+
+    const manutencoesEntreguesSemana = manutencoes.filter(manutencao => {
+      const dataEntrega = manutencao.dataEntrega ? new Date(manutencao.dataEntrega) : null;
+      return manutencao.status === 'entregue' && dataEntrega && dataEntrega >= inicioSemana;
+    });
+
+    const manutencoesEntreguesMes = manutencoes.filter(manutencao => {
+      const dataEntrega = manutencao.dataEntrega ? new Date(manutencao.dataEntrega) : null;
+      return manutencao.status === 'entregue' && dataEntrega && dataEntrega >= inicioMes;
+    });
+
     // Filtrar por forma de pagamento se selecionado
     const filtrarPorPagamento = (vendasArray: Venda[]) => {
       if (paymentFilter === 'todos') return vendasArray;
@@ -122,13 +140,18 @@ export default function Dashboard() {
     const vendasSemanaFiltradas = filtrarPorPagamento(vendasSemana);
     const vendasMesFiltradas = filtrarPorPagamento(vendasMes);
     
-    // Calcular faturamento
-    const faturamentoHoje = vendasHojeFiltradas.reduce((total, venda) => total + venda.total, 0);
-    const faturamentoSemana = vendasSemanaFiltradas.reduce((total, venda) => total + venda.total, 0);
-    const faturamentoMes = vendasMesFiltradas.reduce((total, venda) => total + venda.total, 0);
+    // Calcular faturamento de vendas
+    const faturamentoVendasHoje = vendasHojeFiltradas.reduce((total, venda) => total + venda.total, 0);
+    const faturamentoVendasSemana = vendasSemanaFiltradas.reduce((total, venda) => total + venda.total, 0);
+    const faturamentoVendasMes = vendasMesFiltradas.reduce((total, venda) => total + venda.total, 0);
+
+    // Calcular faturamento de manutenções
+    const faturamentoManutencoesHoje = manutencoesEntreguesHoje.reduce((total, manutencao) => total + manutencao.valorServico, 0);
+    const faturamentoManutencoesSemana = manutencoesEntreguesSemana.reduce((total, manutencao) => total + manutencao.valorServico, 0);
+    const faturamentoManutencoesMes = manutencoesEntreguesMes.reduce((total, manutencao) => total + manutencao.valorServico, 0);
     
-    // Calcular lucros (faturamento - custos)
-    const calcularLucro = (vendasArray: Venda[]) => {
+    // Calcular lucros de vendas (faturamento - custos)
+    const calcularLucroVendas = (vendasArray: Venda[]) => {
       return vendasArray.reduce((lucroTotal, venda) => {
         const lucroVenda = venda.itens.reduce((lucroItem, item) => {
           const produto = produtos.find(p => p.id === item.produtoId);
@@ -143,9 +166,22 @@ export default function Dashboard() {
       }, 0);
     };
 
-    const lucroHoje = calcularLucro(vendasHojeFiltradas);
-    const lucroSemana = calcularLucro(vendasSemanaFiltradas);
-    const lucroMes = calcularLucro(vendasMesFiltradas);
+    // Calcular lucros de manutenções
+    const calcularLucroManutencoes = (manutencoesArray: Manutencao[]) => {
+      return manutencoesArray.reduce((lucroTotal, manutencao) => {
+        const custoMaterial = manutencao.custoMaterial || 0;
+        const lucroManutencao = manutencao.valorServico - custoMaterial;
+        return lucroTotal + lucroManutencao;
+      }, 0);
+    };
+
+    const lucroVendasHoje = calcularLucroVendas(vendasHojeFiltradas);
+    const lucroVendasSemana = calcularLucroVendas(vendasSemanaFiltradas);
+    const lucroVendasMes = calcularLucroVendas(vendasMesFiltradas);
+
+    const lucroManutencoesHoje = calcularLucroManutencoes(manutencoesEntreguesHoje);
+    const lucroManutencoesSemana = calcularLucroManutencoes(manutencoesEntreguesSemana);
+    const lucroManutencoesMes = calcularLucroManutencoes(manutencoesEntreguesMes);
     
     // Produtos com estoque baixo
     const produtosEstoqueBaixo = produtos.filter(produto => 
@@ -165,12 +201,28 @@ export default function Dashboard() {
     }) : [];
     
     return {
-      faturamentoHoje,
-      faturamentoSemana,
-      faturamentoMes,
-      lucroHoje,
-      lucroSemana,
-      lucroMes,
+      // Métricas de vendas
+      faturamentoVendasHoje,
+      faturamentoVendasSemana,
+      faturamentoVendasMes,
+      lucroVendasHoje,
+      lucroVendasSemana,
+      lucroVendasMes,
+      // Métricas de manutenções
+      faturamentoManutencoesHoje,
+      faturamentoManutencoesSemana,
+      faturamentoManutencoesMes,
+      lucroManutencoesHoje,
+      lucroManutencoesSemana,
+      lucroManutencoesMes,
+      // Totais combinados
+      faturamentoTotalHoje: faturamentoVendasHoje + faturamentoManutencoesHoje,
+      faturamentoTotalSemana: faturamentoVendasSemana + faturamentoManutencoesSemana,
+      faturamentoTotalMes: faturamentoVendasMes + faturamentoManutencoesMes,
+      lucroTotalHoje: lucroVendasHoje + lucroManutencoesHoje,
+      lucroTotalSemana: lucroVendasSemana + lucroManutencoesSemana,
+      lucroTotalMes: lucroVendasMes + lucroManutencoesMes,
+      // Outras métricas
       vendasHoje: vendasHojeFiltradas.length,
       vendasSemana: vendasSemanaFiltradas.length,
       vendasMes: vendasMesFiltradas.length,
@@ -419,6 +471,10 @@ export default function Dashboard() {
           break;
         case 'manutencao':
           if (editingItem) {
+            // Se status mudou para 'entregue', definir data de entrega
+            if (formData.status === 'entregue' && editingItem.status !== 'entregue') {
+              formData.dataEntrega = new Date().toISOString();
+            }
             atualizarManutencao(editingItem.id, formData);
           } else {
             const novaManutencao: Manutencao = {
@@ -518,6 +574,7 @@ export default function Dashboard() {
       nomeCliente: '',
       telefoneCliente: '',
       clienteId: '',
+      vendedorId: '', // Campo para atendente
       nomeAparelho: '',
       modeloAparelho: '',
       imeiAparelho: '',
@@ -572,15 +629,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Cards de métricas principais */}
+      {/* Cards de métricas principais - SEPARADAS VENDAS E MANUTENÇÕES */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Faturamento {dateFilter === 'hoje' ? 'Hoje' : dateFilter === 'semana' ? 'Semana' : 'Mês'}</p>
+              <p className="text-sm font-medium text-gray-600">Faturamento Total {dateFilter === 'hoje' ? 'Hoje' : dateFilter === 'semana' ? 'Semana' : 'Mês'}</p>
               <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(dateFilter === 'hoje' ? dashboardData.faturamentoHoje : dateFilter === 'semana' ? dashboardData.faturamentoSemana : dashboardData.faturamentoMes)}
+                {formatCurrency(dateFilter === 'hoje' ? dashboardData.faturamentoTotalHoje : dateFilter === 'semana' ? dashboardData.faturamentoTotalSemana : dashboardData.faturamentoTotalMes)}
               </p>
+              <div className="text-xs text-gray-500 mt-1">
+                Vendas: {formatCurrency(dateFilter === 'hoje' ? dashboardData.faturamentoVendasHoje : dateFilter === 'semana' ? dashboardData.faturamentoVendasSemana : dashboardData.faturamentoVendasMes)} | 
+                Manutenções: {formatCurrency(dateFilter === 'hoje' ? dashboardData.faturamentoManutencoesHoje : dateFilter === 'semana' ? dashboardData.faturamentoManutencoesSemana : dashboardData.faturamentoManutencoesMes)}
+              </div>
             </div>
             <div className="bg-green-100 p-3 rounded-full">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -591,10 +652,14 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Lucro {dateFilter === 'hoje' ? 'Hoje' : dateFilter === 'semana' ? 'Semana' : 'Mês'}</p>
+              <p className="text-sm font-medium text-gray-600">Lucro Total {dateFilter === 'hoje' ? 'Hoje' : dateFilter === 'semana' ? 'Semana' : 'Mês'}</p>
               <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(dateFilter === 'hoje' ? dashboardData.lucroHoje : dateFilter === 'semana' ? dashboardData.lucroSemana : dashboardData.lucroMes)}
+                {formatCurrency(dateFilter === 'hoje' ? dashboardData.lucroTotalHoje : dateFilter === 'semana' ? dashboardData.lucroTotalSemana : dashboardData.lucroTotalMes)}
               </p>
+              <div className="text-xs text-gray-500 mt-1">
+                Vendas: {formatCurrency(dateFilter === 'hoje' ? dashboardData.lucroVendasHoje : dateFilter === 'semana' ? dashboardData.lucroVendasSemana : dashboardData.lucroVendasMes)} | 
+                Manutenções: {formatCurrency(dateFilter === 'hoje' ? dashboardData.lucroManutencoesHoje : dateFilter === 'semana' ? dashboardData.lucroManutencoesSemana : dashboardData.lucroManutencoesMes)}
+              </div>
             </div>
             <div className="bg-green-100 p-3 rounded-full">
               <TrendingUp className="w-6 h-6 text-green-600" />
@@ -624,6 +689,46 @@ export default function Dashboard() {
             </div>
             <div className="bg-orange-100 p-3 rounded-full">
               <Users className="w-6 h-6 text-orange-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seção separada para métricas de manutenções */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Faturamento e Lucro - Manutenções</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-blue-600">Faturamento Manutenções</p>
+                <p className="text-xl font-bold text-blue-900">
+                  {formatCurrency(dateFilter === 'hoje' ? dashboardData.faturamentoManutencoesHoje : dateFilter === 'semana' ? dashboardData.faturamentoManutencoesSemana : dashboardData.faturamentoManutencoesMes)}
+                </p>
+              </div>
+              <Wrench className="w-8 h-8 text-blue-600" />
+            </div>
+          </div>
+          
+          <div className="bg-green-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-green-600">Lucro Manutenções</p>
+                <p className="text-xl font-bold text-green-900">
+                  {formatCurrency(dateFilter === 'hoje' ? dashboardData.lucroManutencoesHoje : dateFilter === 'semana' ? dashboardData.lucroManutencoesSemana : dashboardData.lucroManutencoesMes)}
+                </p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-green-600" />
+            </div>
+          </div>
+
+          <div className="bg-orange-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-orange-600">Manutenções Pendentes</p>
+                <p className="text-xl font-bold text-orange-900">{dashboardData.manutencoesPendentes.length}</p>
+              </div>
+              <Clock className="w-8 h-8 text-orange-600" />
             </div>
           </div>
         </div>
@@ -759,6 +864,7 @@ export default function Dashboard() {
                 memoria: '',
                 imei1: '',
                 imei2: '',
+                numeroSerie: '',
                 cor: '',
                 condicao: 'novo',
                 fornecedor: '',
@@ -1306,6 +1412,17 @@ export default function Dashboard() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Redes Sociais</label>
+                <input
+                  type="text"
+                  value={dadosLoja.redesSociais || ''}
+                  onChange={(e) => atualizarDadosLoja({ redesSociais: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="@instagram, facebook.com/loja"
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-3">
@@ -1349,6 +1466,10 @@ export default function Dashboard() {
               <div>
                 <label className="text-sm font-medium text-gray-500">Endereço</label>
                 <p className="text-lg text-gray-900">{dadosLoja.endereco}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Redes Sociais</label>
+                <p className="text-lg text-gray-900">{dadosLoja.redesSociais || 'Não informado'}</p>
               </div>
             </div>
           </div>
@@ -1446,252 +1567,434 @@ export default function Dashboard() {
   );
 
   // Renderizar outros módulos básicos
-  const renderEstoqueContent = () => (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Controle de Estoque</h2>
-          <p className="text-gray-600">Gerencie seus produtos e estoque</p>
-        </div>
-        <button
-          onClick={() => {
-            setFormData({
-              nome: '',
-              marca: '',
-              tipo: 'celular',
-              modelo: '',
-              memoria: '',
-              imei1: '',
-              imei2: '',
-              cor: '',
-              condicao: 'novo',
-              fornecedor: '',
-              precoCusto: 0,
-              precoVenda: 0,
-              quantidadeEstoque: 0,
-              estoqueMinimo: 1,
-              descricao: ''
-            });
-            setEditingItem(null);
-            setShowForm(true);
-          }}
-          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Produto
-        </button>
-      </div>
+  const renderEstoqueContent = () => {
+    // Filtrar produtos por tipo e busca
+    const produtosFiltrados = produtos.filter(produto => {
+      const matchTipo = tipoEstoqueFilter === 'todos' || produto.tipo === tipoEstoqueFilter;
+      const matchBusca = searchTerm === '' || 
+        produto.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        produto.marca.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        produto.modelo?.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchTipo && matchBusca;
+    });
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produto</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estoque</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preços</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {produtos.map(produto => (
-                <tr key={produto.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div>
-                      <div className="font-medium text-gray-900">{produto.nome}</div>
-                      <div className="text-sm text-gray-500">{produto.marca} - {produto.modelo}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{produto.quantidadeEstoque} unidades</div>
-                    <div className="text-sm text-gray-500">Mín: {produto.estoqueMinimo}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">Venda: {formatCurrency(produto.precoVenda)}</div>
-                    <div className="text-sm text-gray-500">Custo: {formatCurrency(produto.precoCusto)}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      produto.quantidadeEstoque <= produto.estoqueMinimo
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {produto.quantidadeEstoque <= produto.estoqueMinimo ? 'Estoque Baixo' : 'Normal'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setEditingItem(produto);
-                          setFormData(produto);
-                          setShowForm(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => removerProduto(produto.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Controle de Estoque</h2>
+            <p className="text-gray-600">Gerencie seus produtos e estoque</p>
+          </div>
+          <button
+            onClick={() => {
+              setFormData({
+                nome: '',
+                marca: '',
+                tipo: 'celular',
+                modelo: '',
+                memoria: '',
+                imei1: '',
+                imei2: '',
+                numeroSerie: '',
+                cor: '',
+                condicao: 'novo',
+                fornecedor: '',
+                precoCusto: 0,
+                precoVenda: 0,
+                quantidadeEstoque: 0,
+                estoqueMinimo: 1,
+                descricao: ''
+              });
+              setEditingItem(null);
+              setShowForm(true);
+            }}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Novo Produto
+          </button>
         </div>
-      </div>
 
-      {/* FORMULÁRIO DE PRODUTO - CORRIGIDO */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingItem ? 'Editar Produto' : 'Novo Produto'}
-                </h3>
-                <button
-                  onClick={resetForm}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+        {/* Filtros e busca */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Buscar produtos... (ex: película iPhone 11)"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
               </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.nome || ''}
-                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Marca</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.marca || ''}
-                      onChange={(e) => setFormData({...formData, marca: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-                    <select
-                      required
-                      value={formData.tipo || 'celular'}
-                      onChange={(e) => setFormData({...formData, tipo: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    >
-                      <option value="celular">Celular</option>
-                      <option value="acessorio">Acessório</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
-                    <input
-                      type="text"
-                      value={formData.modelo || ''}
-                      onChange={(e) => setFormData({...formData, modelo: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Preço de Custo</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formData.precoCusto || ''}
-                      onChange={(e) => setFormData({...formData, precoCusto: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Preço de Venda</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={formData.precoVenda || ''}
-                      onChange={(e) => setFormData({...formData, precoVenda: parseFloat(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade em Estoque</label>
-                    <input
-                      type="number"
-                      required
-                      value={formData.quantidadeEstoque || ''}
-                      onChange={(e) => setFormData({...formData, quantidadeEstoque: parseInt(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Mínimo</label>
-                    <input
-                      type="number"
-                      required
-                      value={formData.estoqueMinimo || ''}
-                      onChange={(e) => setFormData({...formData, estoqueMinimo: parseInt(e.target.value)})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.fornecedor || ''}
-                      onChange={(e) => setFormData({...formData, fornecedor: e.target.value})}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={resetForm}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    {editingItem ? 'Atualizar' : 'Salvar'}
-                  </button>
-                </div>
-              </form>
+            </div>
+            <div>
+              <select
+                value={tipoEstoqueFilter}
+                onChange={(e) => setTipoEstoqueFilter(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              >
+                <option value="todos">Todos os produtos</option>
+                <option value="celular">Celulares</option>
+                <option value="acessorio">Acessórios</option>
+              </select>
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produto</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estoque</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Preços</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {produtosFiltrados.map(produto => (
+                  <tr key={produto.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div>
+                        <div className="font-medium text-gray-900">{produto.nome}</div>
+                        <div className="text-sm text-gray-500">
+                          {produto.marca} {produto.modelo && `- ${produto.modelo}`}
+                          {produto.memoria && ` - ${produto.memoria}GB`}
+                          {produto.cor && ` - ${produto.cor}`}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        produto.tipo === 'celular' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {produto.tipo === 'celular' ? 'Celular' : 'Acessório'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">{produto.quantidadeEstoque} unidades</div>
+                      <div className="text-sm text-gray-500">Mín: {produto.estoqueMinimo}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">Venda: {formatCurrency(produto.precoVenda)}</div>
+                      <div className="text-sm text-gray-500">Custo: {formatCurrency(produto.precoCusto)}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        produto.quantidadeEstoque <= produto.estoqueMinimo
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        {produto.quantidadeEstoque <= produto.estoqueMinimo ? 'Estoque Baixo' : 'Normal'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingItem(produto);
+                            setFormData(produto);
+                            setShowForm(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removerProduto(produto.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* FORMULÁRIO DE PRODUTO - CORRIGIDO COM CAMPOS ESPECÍFICOS PARA CELULARES */}
+        {showForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {editingItem ? 'Editar Produto' : 'Novo Produto'}
+                  </h3>
+                  <button
+                    onClick={resetForm}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Informações Básicas */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-md font-semibold text-gray-900 mb-4">Informações Básicas</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Produto</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.nome || ''}
+                          onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="Ex: iPhone 13 Pro Max"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Marca</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.marca || ''}
+                          onChange={(e) => setFormData({...formData, marca: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="Ex: Apple"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                        <select
+                          required
+                          value={formData.tipo || 'celular'}
+                          onChange={(e) => setFormData({...formData, tipo: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="celular">Celular</option>
+                          <option value="acessorio">Acessório</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Fornecedor</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.fornecedor || ''}
+                          onChange={(e) => setFormData({...formData, fornecedor: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="Ex: Distribuidora ABC"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Campos específicos para celulares */}
+                  {formData.tipo === 'celular' && (
+                    <div className="bg-blue-50 rounded-lg p-4">
+                      <h4 className="text-md font-semibold text-blue-900 mb-4">Informações Específicas do Celular</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                          <input
+                            type="text"
+                            value={formData.modelo || ''}
+                            onChange={(e) => setFormData({...formData, modelo: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Ex: Pro Max"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">IMEI 1</label>
+                          <input
+                            type="text"
+                            value={formData.imei1 || ''}
+                            onChange={(e) => setFormData({...formData, imei1: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="15 dígitos"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">IMEI 2</label>
+                          <input
+                            type="text"
+                            value={formData.imei2 || ''}
+                            onChange={(e) => setFormData({...formData, imei2: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="15 dígitos (se dual chip)"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Número de Série</label>
+                          <input
+                            type="text"
+                            value={formData.numeroSerie || ''}
+                            onChange={(e) => setFormData({...formData, numeroSerie: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Número de série do aparelho"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Cor</label>
+                          <input
+                            type="text"
+                            value={formData.cor || ''}
+                            onChange={(e) => setFormData({...formData, cor: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Ex: Azul Sierra"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Memória (GB)</label>
+                          <select
+                            value={formData.memoria || ''}
+                            onChange={(e) => setFormData({...formData, memoria: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="">Selecionar</option>
+                            <option value="32">32 GB</option>
+                            <option value="64">64 GB</option>
+                            <option value="128">128 GB</option>
+                            <option value="256">256 GB</option>
+                            <option value="512">512 GB</option>
+                            <option value="1024">1 TB</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Preços e Estoque */}
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <h4 className="text-md font-semibold text-green-900 mb-4">Preços e Estoque</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Valor de Custo</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={formData.precoCusto || ''}
+                          onChange={(e) => setFormData({...formData, precoCusto: parseFloat(e.target.value)})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Valor de Venda</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={formData.precoVenda || ''}
+                          onChange={(e) => setFormData({...formData, precoVenda: parseFloat(e.target.value)})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade em Estoque</label>
+                        <input
+                          type="number"
+                          required
+                          value={formData.quantidadeEstoque || ''}
+                          onChange={(e) => setFormData({...formData, quantidadeEstoque: parseInt(e.target.value)})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="0"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Estoque Mínimo</label>
+                        <input
+                          type="number"
+                          required
+                          value={formData.estoqueMinimo || ''}
+                          onChange={(e) => setFormData({...formData, estoqueMinimo: parseInt(e.target.value)})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Informações Adicionais */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-md font-semibold text-gray-900 mb-4">Informações Adicionais</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Condição</label>
+                        <select
+                          value={formData.condicao || 'novo'}
+                          onChange={(e) => setFormData({...formData, condicao: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="novo">Novo</option>
+                          <option value="seminovo">Seminovo</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Data da Compra</label>
+                        <input
+                          type="date"
+                          value={formData.dataCompra || ''}
+                          onChange={(e) => setFormData({...formData, dataCompra: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                        <textarea
+                          rows={3}
+                          value={formData.descricao || ''}
+                          onChange={(e) => setFormData({...formData, descricao: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="Descrição adicional do produto"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      {editingItem ? 'Atualizar' : 'Salvar'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderVendasContent = () => (
     <div className="space-y-6">
@@ -2321,6 +2624,7 @@ export default function Dashboard() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aparelho</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Atendente</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Defeito</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valor</th>
@@ -2328,66 +2632,74 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {manutencoes.map(manutencao => (
-                <tr key={manutencao.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div>
-                      <div className="font-medium text-gray-900">{manutencao.nomeCliente}</div>
-                      <div className="text-sm text-gray-500">{manutencao.telefoneCliente}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{manutencao.nomeAparelho}</div>
-                      <div className="text-sm text-gray-500">{manutencao.modeloAparelho}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {manutencao.defeitoInformado}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      manutencao.status === 'recebido' ? 'bg-yellow-100 text-yellow-800' :
-                      manutencao.status === 'em_andamento' ? 'bg-blue-100 text-blue-800' :
-                      manutencao.status === 'concluido' ? 'bg-green-100 text-green-800' :
-                      manutencao.status === 'entregue' ? 'bg-gray-100 text-gray-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {manutencao.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    {formatCurrency(manutencao.valorServico)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => gerarComprovanteManutencaoPDF(manutencao)}
-                        className="text-green-600 hover:text-green-900"
-                        title="Gerar PDF"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingItem(manutencao);
-                          setFormData(manutencao);
-                          setShowForm(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {manutencoes.map(manutencao => {
+                const atendente = manutencao.vendedorId ? vendedores.find(v => v.id === manutencao.vendedorId) : null;
+                return (
+                  <tr key={manutencao.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div>
+                        <div className="font-medium text-gray-900">{manutencao.nomeCliente}</div>
+                        <div className="text-sm text-gray-500">{manutencao.telefoneCliente}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{manutencao.nomeAparelho}</div>
+                        <div className="text-sm text-gray-500">{manutencao.modeloAparelho}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900">
+                        {atendente ? atendente.nome : 'Não definido'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {manutencao.defeitoInformado}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        manutencao.status === 'recebido' ? 'bg-yellow-100 text-yellow-800' :
+                        manutencao.status === 'em_andamento' ? 'bg-blue-100 text-blue-800' :
+                        manutencao.status === 'concluido' ? 'bg-green-100 text-green-800' :
+                        manutencao.status === 'entregue' ? 'bg-gray-100 text-gray-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {manutencao.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      {formatCurrency(manutencao.valorServico)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => gerarComprovanteManutencaoPDF(manutencao)}
+                          className="text-green-600 hover:text-green-900"
+                          title="Gerar PDF"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingItem(manutencao);
+                            setFormData(manutencao);
+                            setShowForm(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* FORMULÁRIO DE MANUTENÇÃO - CORRIGIDO COM CLIENTES E TERMOS */}
+      {/* FORMULÁRIO DE MANUTENÇÃO - CORRIGIDO COM CLIENTES, TERMOS E ATENDENTE */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -2435,6 +2747,22 @@ export default function Dashboard() {
                       {clientes.map(cliente => (
                         <option key={cliente.id} value={cliente.id}>
                           {cliente.nome} - {cliente.telefone}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Atendente</label>
+                    <select
+                      value={formData.vendedorId || ''}
+                      onChange={(e) => setFormData({...formData, vendedorId: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    >
+                      <option value="">Selecionar atendente</option>
+                      {vendedores.filter(v => v.ativo).map(vendedor => (
+                        <option key={vendedor.id} value={vendedor.id}>
+                          {vendedor.nome}
                         </option>
                       ))}
                     </select>
