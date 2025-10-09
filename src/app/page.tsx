@@ -11,21 +11,26 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
-    // Aguardar um pouco para garantir hidratação completa
-    const timer = setTimeout(() => {
-      setIsClient(true);
-      setIsLoading(false);
-    }, 150);
+    // Aguardar hidratação completa e verificar se o DOM está pronto
+    const checkReady = () => {
+      if (typeof window !== 'undefined' && document.readyState === 'complete') {
+        setIsClient(true);
+        setIsLoading(false);
+      } else {
+        setTimeout(checkReady, 50);
+      }
+    };
     
-    return () => clearTimeout(timer);
+    checkReady();
   }, []);
 
+  // Loading screen mais robusto
   if (isLoading || !isClient) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
+          <p className="text-gray-600">Inicializando sistema...</p>
         </div>
       </div>
     );
@@ -36,6 +41,22 @@ export default function Home() {
 
 function HomeContent() {
   const { user } = useApp();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginScreen />;

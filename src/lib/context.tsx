@@ -3,6 +3,22 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Produto, Cliente, Venda, Manutencao, TermoGarantia, DadosLoja, Vendedor } from './types';
 import { DADOS_LOJA } from './constants';
+import { 
+  supabase, 
+  getCurrentUser, 
+  loginUser, 
+  logoutUser, 
+  saveStoreData, 
+  loadStoreData,
+  createUserStoreProfile,
+  getUserStoreProfile,
+  updateUserStoreProfile,
+  createAdminUser,
+  loadAdminUsers,
+  removeAdminUser,
+  createUserInSupabase,
+  syncUserWithSupabase
+} from './supabase';
 
 interface AppContextType {
   // Autenticação
@@ -276,6 +292,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [faturamentoTotal, setFaturamentoTotal] = useState(0);
   const [lucroTotal, setLucroTotal] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Verificar hidratação
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // Função para salvar dados no Supabase com proteção contra erros
+  const saveDataToSupabase = async (userId: string) => {
+    if (!isHydrated) return;
+    
+    try {
+      const storeData = {
+        produtos,
+        clientes,
+        vendas,
+        manutencoes,
+        termosGarantia,
+        vendedores,
+        usuarios,
+        dadosLoja,
+        faturamentoTotal,
+        lucroTotal
+      };
+      
+      await saveStoreData(userId, storeData);
+      console.log('✅ Dados salvos no Supabase com sucesso');
+    } catch (error) {
+      console.warn('⚠️ Erro ao salvar dados no Supabase:', error);
+    }
+  };
+
+  // Função para carregar dados do Supabase com proteção contra erros
+  const loadDataFromSupabase = async (userId: string) => {
+    if (!isHydrated) return false;
+    
+    try {
+      const { data, error } = await loadStoreData(userId);
+      
+      if (error) {
+        console.warn('⚠️ Erro ao carregar dados do Supabase:', error);
+        return false;
+      }
+
+      if (data) {
+        setProdutos(data.produtos || []);
+        setClientes(data.clientes || []);
+        setVendas(data.vendas || []);
+        setManutencoes(data.manutencoes || []);
+        setTermosGarantia(data.termosGarantia || []);
+        setVendedores(data.vendedores || []);
+        setUsuarios(data.usuarios || []);
+        setDadosLoja(data.dadosLoja || DADOS_LOJA);
+        setFaturamentoTotal(data.faturamentoTotal || 0);
+        setLucroTotal(data.lucroTotal || 0);
+        
+        console.log('✅ Dados carregados do Supabase com sucesso');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar dados do Supabase:', error);
+      return false;
+    }
+  };
 
   // Função para obter chave de localStorage específica do usuário
   const getUserStorageKey = (key: string, userId?: string) => {
@@ -283,22 +367,99 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return `gp-${key}-${currentUserId}`;
   };
 
-  // Inicialização do contexto
+  // Função segura para acessar localStorage
+  const safeLocalStorage = {
+    getItem: (key: string) => {
+      if (!isHydrated || typeof window === 'undefined') return null;
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        console.warn('Erro ao acessar localStorage:', error);
+        return null;
+      }
+    },
+    setItem: (key: string, value: string) => {
+      if (!isHydrated || typeof window === 'undefined') return;
+      try {
+        localStorage.setItem(key, value);
+      } catch (error) {
+        console.warn('Erro ao salvar no localStorage:', error);
+      }
+    },
+    removeItem: (key: string) => {
+      if (!isHydrated || typeof window === 'undefined') return;
+      try {
+        localStorage.removeItem(key);
+      } catch (error) {
+        console.warn('Erro ao remover do localStorage:', error);
+      }
+    }
+  };
+
+  // Inicialização do contexto com proteção robusta
   useEffect(() => {
+    if (!isHydrated) return;
+
     const initializeApp = async () => {
       try {
         // Aguardar um pouco para garantir que o DOM está pronto
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Carregar dados do localStorage apenas no cliente
-        if (typeof window !== 'undefined' && window.localStorage) {
+        // Verificar se há usuário logado no Supabase
+        const { data: supabaseUserData } = await getCurrentUser();
+        
+        if (supabaseUserData) {
+          setSupabaseUser(supabaseUserData);
+          
+          // Carregar perfil do usuário
+          const { data: profile } = await getUserStoreProfile(supabaseUserData.id);
+          
+          if (profile) {
+            const userData: User = {
+              id: supabaseUserData.id,
+              username: supabaseUserData.email || '',
+              email: supabaseUserData.email,
+              role: 'user',
+              type: 'supabase',
+              createdAt: profile.created_at || new Date().toISOString(),
+              expiresAt: profile.subscription_expires_at
+            };
+            
+            setUser(userData);
+            
+            // Carregar dados da loja do Supabase
+            const dataLoaded = await loadDataFromSupabase(supabaseUserData.id);
+            
+            // Se não conseguiu carregar do Supabase, tentar localStorage como fallback
+            if (!dataLoaded) {
+              try {
+                const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos', supabaseUserData.id));
+                const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes', supabaseUserData.id));
+                const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas', supabaseUserData.id));
+                const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes', supabaseUserData.id));
+                const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia', supabaseUserData.id));
+                const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores', supabaseUserData.id));
+
+                if (savedProdutos) setProdutos(JSON.parse(savedProdutos));
+                if (savedClientes) setClientes(JSON.parse(savedClientes));
+                if (savedVendas) setVendas(JSON.parse(savedVendas));
+                if (savedManutencoes) setManutencoes(JSON.parse(savedManutencoes));
+                if (savedTermosGarantia) setTermosGarantia(JSON.parse(savedTermosGarantia));
+                if (savedVendedores) setVendedores(JSON.parse(savedVendedores));
+              } catch (e) {
+                console.warn('Erro ao carregar dados do localStorage:', e);
+              }
+            }
+          }
+        } else {
+          // Carregar dados do localStorage apenas no cliente
           try {
-            const savedLoginAttempts = localStorage.getItem('gp-login-attempts');
-            const savedUsuarios = localStorage.getItem('gp-usuarios');
-            const savedDadosLoja = localStorage.getItem('gp-dados-loja');
-            const savedFaturamento = localStorage.getItem('gp-faturamento-total');
-            const savedLucro = localStorage.getItem('gp-lucro-total');
-            const savedUser = localStorage.getItem('gp-user');
+            const savedLoginAttempts = safeLocalStorage.getItem('gp-login-attempts');
+            const savedUsuarios = safeLocalStorage.getItem('gp-usuarios');
+            const savedDadosLoja = safeLocalStorage.getItem('gp-dados-loja');
+            const savedFaturamento = safeLocalStorage.getItem('gp-faturamento-total');
+            const savedLucro = safeLocalStorage.getItem('gp-lucro-total');
+            const savedUser = safeLocalStorage.getItem('gp-user');
 
             if (savedLoginAttempts) {
               setLoginAttempts(parseInt(savedLoginAttempts) || 0);
@@ -351,21 +512,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     initializeApp();
-  }, []);
+  }, [isHydrated]);
 
   // Carregar dados específicos do usuário quando user muda
   useEffect(() => {
-    if (!isInitialized || !user || typeof window === 'undefined' || !window.localStorage) return;
+    if (!isInitialized || !user || !isHydrated) return;
 
     try {
+      // Se for usuário do Supabase, dados já foram carregados na inicialização
+      if (user.type === 'supabase') return;
+
       // Se for o usuário principal da JV Celulares, carrega dados iniciais se não existirem
       if (user.username === 'jvcell2023') {
-        const savedProdutos = localStorage.getItem(getUserStorageKey('produtos'));
-        const savedClientes = localStorage.getItem(getUserStorageKey('clientes'));
-        const savedVendas = localStorage.getItem(getUserStorageKey('vendas'));
-        const savedManutencoes = localStorage.getItem(getUserStorageKey('manutencoes'));
-        const savedTermosGarantia = localStorage.getItem(getUserStorageKey('termos-garantia'));
-        const savedVendedores = localStorage.getItem(getUserStorageKey('vendedores'));
+        const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
+        const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
+        const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
+        const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
+        const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
+        const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
 
         try {
           setProdutos(savedProdutos ? JSON.parse(savedProdutos) : produtosIniciais);
@@ -385,12 +549,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       } else {
         // Para outros usuários, carrega dados específicos ou inicia vazio
-        const savedProdutos = localStorage.getItem(getUserStorageKey('produtos'));
-        const savedClientes = localStorage.getItem(getUserStorageKey('clientes'));
-        const savedVendas = localStorage.getItem(getUserStorageKey('vendas'));
-        const savedManutencoes = localStorage.getItem(getUserStorageKey('manutencoes'));
-        const savedTermosGarantia = localStorage.getItem(getUserStorageKey('termos-garantia'));
-        const savedVendedores = localStorage.getItem(getUserStorageKey('vendedores'));
+        const savedProdutos = safeLocalStorage.getItem(getUserStorageKey('produtos'));
+        const savedClientes = safeLocalStorage.getItem(getUserStorageKey('clientes'));
+        const savedVendas = safeLocalStorage.getItem(getUserStorageKey('vendas'));
+        const savedManutencoes = safeLocalStorage.getItem(getUserStorageKey('manutencoes'));
+        const savedTermosGarantia = safeLocalStorage.getItem(getUserStorageKey('termos-garantia'));
+        const savedVendedores = safeLocalStorage.getItem(getUserStorageKey('vendedores'));
 
         try {
           setProdutos(savedProdutos ? JSON.parse(savedProdutos) : []);
@@ -412,44 +576,104 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.warn('Erro ao carregar dados do usuário:', error);
     }
-  }, [user, isInitialized]);
+  }, [user, isInitialized, isHydrated]);
 
-  // Salvar dados no localStorage
+  // Salvar dados no localStorage E no Supabase com proteção
   useEffect(() => {
-    if (!isInitialized || typeof window === 'undefined' || !window.localStorage) return;
+    if (!isInitialized || !isHydrated) return;
     
     try {
       if (user) {
-        localStorage.setItem('gp-user', JSON.stringify(user));
+        safeLocalStorage.setItem('gp-user', JSON.stringify(user));
+        
+        // Se for usuário do Supabase, salvar também no banco
+        if (user.type === 'supabase' && supabaseUser) {
+          saveDataToSupabase(supabaseUser.id);
+        }
       }
-      localStorage.setItem('gp-login-attempts', loginAttempts.toString());
-      localStorage.setItem('gp-usuarios', JSON.stringify(usuarios));
-      localStorage.setItem('gp-dados-loja', JSON.stringify(dadosLoja));
-      localStorage.setItem('gp-faturamento-total', faturamentoTotal.toString());
-      localStorage.setItem('gp-lucro-total', lucroTotal.toString());
+      safeLocalStorage.setItem('gp-login-attempts', loginAttempts.toString());
+      safeLocalStorage.setItem('gp-usuarios', JSON.stringify(usuarios));
+      safeLocalStorage.setItem('gp-dados-loja', JSON.stringify(dadosLoja));
+      safeLocalStorage.setItem('gp-faturamento-total', faturamentoTotal.toString());
+      safeLocalStorage.setItem('gp-lucro-total', lucroTotal.toString());
     } catch (error) {
       console.warn('Erro ao salvar dados globais:', error);
     }
-  }, [user, loginAttempts, usuarios, dadosLoja, faturamentoTotal, lucroTotal, isInitialized]);
+  }, [user, loginAttempts, usuarios, dadosLoja, faturamentoTotal, lucroTotal, isInitialized, supabaseUser, isHydrated]);
 
-  // Salvar dados específicos do usuário
+  // Salvar dados específicos do usuário no localStorage E no Supabase com proteção
   useEffect(() => {
-    if (!isInitialized || !user || typeof window === 'undefined' || !window.localStorage) return;
+    if (!isInitialized || !user || !isHydrated) return;
     try {
-      localStorage.setItem(getUserStorageKey('produtos'), JSON.stringify(produtos));
-      localStorage.setItem(getUserStorageKey('clientes'), JSON.stringify(clientes));
-      localStorage.setItem(getUserStorageKey('vendas'), JSON.stringify(vendas));
-      localStorage.setItem(getUserStorageKey('manutencoes'), JSON.stringify(manutencoes));
-      localStorage.setItem(getUserStorageKey('termos-garantia'), JSON.stringify(termosGarantia));
-      localStorage.setItem(getUserStorageKey('vendedores'), JSON.stringify(vendedores));
+      safeLocalStorage.setItem(getUserStorageKey('produtos'), JSON.stringify(produtos));
+      safeLocalStorage.setItem(getUserStorageKey('clientes'), JSON.stringify(clientes));
+      safeLocalStorage.setItem(getUserStorageKey('vendas'), JSON.stringify(vendas));
+      safeLocalStorage.setItem(getUserStorageKey('manutencoes'), JSON.stringify(manutencoes));
+      safeLocalStorage.setItem(getUserStorageKey('termos-garantia'), JSON.stringify(termosGarantia));
+      safeLocalStorage.setItem(getUserStorageKey('vendedores'), JSON.stringify(vendedores));
+      
+      // Se for usuário do Supabase, salvar também no banco
+      if (user.type === 'supabase' && supabaseUser) {
+        saveDataToSupabase(supabaseUser.id);
+      }
     } catch (error) {
       console.warn('Erro ao salvar dados do usuário:', error);
     }
-  }, [produtos, clientes, vendas, manutencoes, termosGarantia, vendedores, user, isInitialized]);
+  }, [produtos, clientes, vendas, manutencoes, termosGarantia, vendedores, user, isInitialized, supabaseUser, isHydrated]);
 
   const login = async (username: string, password: string, type: 'normal' | 'admin' = 'normal'): Promise<boolean> => {
     try {
-      // Login local (sistema antigo)
+      // Primeiro tentar login no Supabase
+      const { data: supabaseData, error } = await loginUser(username, password);
+      
+      if (supabaseData && supabaseData.user && !error) {
+        setSupabaseUser(supabaseData.user);
+        
+        // Verificar se o usuário tem perfil
+        let profile = await getUserStoreProfile(supabaseData.user.id);
+        
+        if (!profile.data) {
+          // Criar perfil se não existir
+          await createUserStoreProfile(supabaseData.user.id, {
+            email: supabaseData.user.email,
+            subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
+            is_active: true
+          });
+          profile = await getUserStoreProfile(supabaseData.user.id);
+        }
+        
+        // Verificar se a assinatura ainda está válida
+        if (profile.data) {
+          const now = new Date();
+          const expiresAt = new Date(profile.data.subscription_expires_at);
+          
+          if (now > expiresAt) {
+            console.error('Assinatura expirada');
+            return false;
+          }
+          
+          const userData: User = {
+            id: supabaseData.user.id,
+            username: supabaseData.user.email || '',
+            email: supabaseData.user.email,
+            role: 'user',
+            type: 'supabase',
+            createdAt: profile.data.created_at || new Date().toISOString(),
+            expiresAt: profile.data.subscription_expires_at
+          };
+          
+          setUser(userData);
+          setLoginAttempts(0);
+          
+          // Carregar dados do Supabase
+          await loadDataFromSupabase(supabaseData.user.id);
+          
+          console.log('✅ Login realizado com sucesso via Supabase');
+          return true;
+        }
+      }
+      
+      // Se falhou no Supabase, tentar login local (sistema antigo)
       if (type === 'normal' && username === 'jvcell2023' && password === 'Jesuscristovive') {
         const userData: User = {
           id: '1',
@@ -476,7 +700,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
-      // Verificar usuários criados pelo admin
+      // Verificar usuários criados pelo admin (sistema local)
       const usuarioEncontrado = usuarios.find(u => u.username === username && u.password === password);
       if (usuarioEncontrado && type === 'normal') {
         // Verificar se o usuário ainda está dentro do prazo de acesso
@@ -501,6 +725,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
+      // Logout do Supabase se estiver logado
+      if (supabaseUser) {
+        await logoutUser();
+      }
+      
       setUser(null);
       setSupabaseUser(null);
       setProdutos([]);
@@ -514,9 +743,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setFaturamentoTotal(0);
       setLucroTotal(0);
       
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('gp-user');
-      }
+      safeLocalStorage.removeItem('gp-user');
     } catch (error) {
       console.warn('Erro no logout:', error);
     }
@@ -677,28 +904,123 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setVendedores(prev => prev.filter(vendedor => vendedor.id !== id));
   };
 
-  // Funções para usuários (apenas admin)
+  // Funções para usuários (apenas admin) - SINCRONIZAÇÃO AUTOMÁTICA COM SUPABASE
   const criarUsuario = async (dadosUsuario: Omit<User, 'id' | 'createdAt'>) => {
     try {
-      const novoUsuario: User = {
-        ...dadosUsuario,
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString()
-      };
-      setUsuarios(prev => [...prev, novoUsuario]);
+      console.log('🔄 Iniciando criação de usuário com sincronização automática...');
+      
+      // Se for usuário do Supabase (admin logado via Supabase), criar no Supabase
+      if (user?.type === 'supabase' && supabaseUser) {
+        console.log('📡 Criando usuário no Supabase via painel administrativo...');
+        
+        const { data, error } = await createAdminUser(supabaseUser.id, {
+          email: dadosUsuario.email || dadosUsuario.username,
+          password: dadosUsuario.password || 'senha123',
+          username: dadosUsuario.username,
+          role: dadosUsuario.role,
+          subscriptionExpiresAt: dadosUsuario.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        });
+        
+        if (error) {
+          console.error('❌ Erro ao criar usuário no Supabase:', error);
+          return;
+        }
+        
+        console.log('✅ Usuário criado e sincronizado com Supabase com sucesso!');
+        console.log('✅ O usuário pode agora fazer login no sistema normal');
+        
+        // Recarregar lista de usuários
+        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
+        if (adminUsers) {
+          const mappedUsers = adminUsers.map((profile: any) => ({
+            id: profile.user_id,
+            username: profile.username || profile.email,
+            email: profile.email,
+            role: profile.role || 'user',
+            type: 'supabase',
+            createdAt: profile.created_at,
+            expiresAt: profile.subscription_expires_at
+          }));
+          setUsuarios(mappedUsers);
+        }
+      } else {
+        // Criar usuário local E sincronizar com Supabase
+        console.log('🔄 Criando usuário local e sincronizando com Supabase...');
+        
+        const novoUsuario: User = {
+          ...dadosUsuario,
+          id: Date.now().toString(),
+          createdAt: new Date().toISOString()
+        };
+        
+        // Adicionar ao estado local
+        setUsuarios(prev => [...prev, novoUsuario]);
+        
+        // Tentar sincronizar com Supabase
+        const syncResult = await syncUserWithSupabase(novoUsuario);
+        
+        if (syncResult) {
+          console.log('✅ Usuário criado localmente e sincronizado com Supabase!');
+          console.log('✅ O usuário pode agora fazer login no sistema normal');
+        } else {
+          console.log('⚠️ Usuário criado localmente, mas não foi possível sincronizar com Supabase');
+        }
+      }
     } catch (error) {
-      console.warn('Erro ao criar usuário:', error);
+      console.warn('❌ Erro ao criar usuário:', error);
     }
   };
 
   const removerUsuario = async (id: string) => {
-    setUsuarios(prev => prev.filter(usuario => usuario.id !== id));
+    try {
+      // Se for usuário do Supabase, remover do Supabase
+      if (user?.type === 'supabase' && supabaseUser) {
+        const { success, error } = await removeAdminUser(id);
+        
+        if (!success) {
+          console.error('Erro ao remover usuário do Supabase:', error);
+          return;
+        }
+        
+        // Recarregar lista de usuários
+        const { data: adminUsers } = await loadAdminUsers(supabaseUser.id);
+        if (adminUsers) {
+          const mappedUsers = adminUsers.map((profile: any) => ({
+            id: profile.user_id,
+            username: profile.username || profile.email,
+            email: profile.email,
+            role: profile.role || 'user',
+            type: 'supabase',
+            createdAt: profile.created_at,
+            expiresAt: profile.subscription_expires_at
+          }));
+          setUsuarios(mappedUsers);
+        }
+      } else {
+        // Remover usuário local
+        setUsuarios(prev => prev.filter(usuario => usuario.id !== id));
+      }
+    } catch (error) {
+      console.warn('Erro ao remover usuário:', error);
+    }
   };
 
   // Função para atualizar dados da loja
   const atualizarDadosLoja = async (dados: Partial<DadosLoja>) => {
     const novosDados = { ...dadosLoja, ...dados };
     setDadosLoja(novosDados);
+    
+    // Se for usuário do Supabase, atualizar perfil
+    if (user?.type === 'supabase' && supabaseUser) {
+      await updateUserStoreProfile(supabaseUser.id, {
+        store_name: novosDados.nome,
+        store_cnpj: novosDados.cnpj,
+        store_address: novosDados.endereco,
+        store_phone: novosDados.telefone,
+        store_social_media: novosDados.redesSociais,
+        store_logo: novosDados.logo
+      });
+    }
   };
 
   const value: AppContextType = {
@@ -760,13 +1082,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lucroTotal
   };
 
-  // Não renderizar até que a inicialização esteja completa
-  if (!isInitialized) {
+  // Não renderizar até que a hidratação e inicialização estejam completas
+  if (!isHydrated || !isInitialized) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando sistema...</p>
+          <p className="text-gray-600">Inicializando sistema...</p>
         </div>
       </div>
     );
